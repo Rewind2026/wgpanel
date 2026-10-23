@@ -1,0 +1,74 @@
+services:
+  wgpanel:
+    image: ghcr.io/Rewind2026/wgpanel:latest
+    container_name: wgpanel
+    restart: unless-stopped
+
+    # 先丢弃全部能力再逐个加回：容器默认能力集包含大量与本服务无关的权限，
+    # 一旦镜像或依赖被植入恶意代码，这些权限都会成为攻击面。
+    #
+    # NET_ADMIN     创建/配置 wg 接口、地址、路由与 NAT 规则。
+    # DAC_OVERRIDE  以 root 身份读写数据卷。数据卷继承镜像内 /data 的属主
+    #                （10001），没有这个能力 SQLite 会以
+    #                "attempt to write a readonly database" 启动失败。
+    #                缺少它时错误信息具有误导性，实际就是权限不足。
+    #
+    # 不授予 SYS_MODULE：它允许加载任意内核模块，等同于宿主 root。
+    # 宿主已 `modprobe wireguard` 时本就不需要。
+    #
+    # 容器以 root 运行但能力集仅上述两项。实测非 root（UID 10001）配合
+    # --cap-add NET_ADMIN 时 CapEff 为 0，wg 与 iptables 全部 EPERM，
+    # 因此这里不用非 root，而是靠 cap_drop ALL 收窄攻击面。
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+      - DAC_OVERRIDE
+
+    devices:
+      - /dev/net/tun:/dev/net/tun
+
+    sysctls:
+      net.ipv4.ip_forward: "1"
+      net.ipv4.conf.all.src_valid_mark: "1"
+
+    ports:
+      - "51820:51820/udp"   # WireGuard 隧道
+      - "8080:8080/tcp"     # 管理面板
+
+    volumes:
+      - wgpanel-data:/data
+
+    environment:
+      WGP_DATA_DIR: /data
+      WGP_LISTEN_ADDR: 0.0.0.0:8080
+      WGP_INTERFACE: wg0
+      WGP_LISTEN_PORT: "51820"
+      WGP_ADDRESS_CIDR: 10.8.0.1/24
+      WGP_MTU: "1420"
+      WGP_DNS: 1.1.1.1,8.8.8.8
+      WGP_NATIVE_MODE: bridge
+      WGP_SAMPLE_INTERVAL: 1s
+      WGP_LOG_LEVEL: info
+      WGP_LOG_FORMAT: console
+      # 仅在面板确实部署于 TLS 反向代理之后时设为 1，否则浏览器不会回传 Cookie。
+      WGP_COOKIE_SECURE: ${WGP_COOKIE_SECURE:-0}
+      # 填写反代的可信来源（如 10.0.0.0/8）。留空表示不信任任何代理头，
+      # 真实来源 IP 取 TCP 对端，登录限流才不会被伪造的 X-Forwarded-For 绕过。
+      WGP_TRUSTED_PROXY: ${WGP_TRUSTED_PROXY:-}
+      # 首次启动的管理员密码。不设置则随机生成并打印到启动日志（仅显示一次）。
+      WGP_ADMIN_USERNAME: ${WGP_ADMIN_USERNAME:-admin}
+      WGP_ADMIN_PASSWORD: ${WGP_ADMIN_PASSWORD:-}
+      # 公网地址，用于生成客户端配置里的 Endpoint，留空时自动探测出口 IP。
+      WGP_PUBLIC_ENDPOINT: ${WGP_PUBLIC_ENDPOINT:-}
+      TZ: ${TZ:-UTC}
+
+    # 面板是长期运行服务，日志限流避免刷爆磁盘。
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  wgpanel-data:

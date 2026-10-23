@@ -1,0 +1,56 @@
+WGPanel {{ .Chart.AppVersion }} 已部署到命名空间 {{ .Release.Namespace }}。
+
+1) 取管理员密码
+
+{{- if .Values.admin.existingSecret }}
+   kubectl -n {{ .Release.Namespace }} get secret {{ .Values.admin.existingSecret }} -o jsonpath='{.data.password}' | base64 -d; echo
+{{- else if .Values.admin.password }}
+   已通过 values 中的 admin.password 指定。
+{{- else }}
+   未指定初始密码，面板已随机生成并只打印一次：
+
+   kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "wgpanel.fullname" . }} | grep -i "password"
+{{- end }}
+
+2) 访问面板
+
+{{- if eq .Values.service.type "ClusterIP" }}
+   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "wgpanel.fullname" . }} 8080:{{ .Values.service.panelPort }}
+
+   然后打开 http://127.0.0.1:8080
+{{- else }}
+   等待 LoadBalancer 分配外部地址：
+
+   kubectl -n {{ .Release.Namespace }} get svc {{ include "wgpanel.fullname" . }} -w
+{{- end }}
+
+3) WireGuard 接入
+
+   隧道端口：{{ if eq .Values.wireguard.exposure "hostPort" }}宿主 UDP {{ .Values.wireguard.hostPort }}{{ else }}见 LoadBalancer Service {{ include "wgpanel.fullname" . }}-wireguard{{ end }}
+   监听端口：{{ .Values.wgpanel.listenPort }} / 隧道网段：{{ .Values.wgpanel.addressCidr }}
+
+{{- if eq .Values.wgpanel.nativeMode "host" }}
+
+   当前为 host 模式：面板不会修改宿主转发与防火墙。请确认节点已自行配置：
+     sysctl -w net.ipv4.ip_forward=1
+     iptables -t nat -A POSTROUTING -s {{ .Values.wgpanel.addressCidr }} ! -o {{ .Values.wgpanel.interface }} -j MASQUERADE
+{{- else }}
+
+   当前为 bridge 模式：面板在 Pod 独立 netns 内完成转发、路由与 NAT。
+{{- end }}
+
+4) 检查就绪状态
+
+   kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+   kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "wgpanel.fullname" . }} -- wget -qO- http://127.0.0.1:8080/readyz
+
+   /readyz 会真实检查数据库、WireGuard 控制面与网络下发能力，
+   返回 503 表示容器起来了但还不能建隧道，最常见原因是节点未加载 wireguard 模块。
+{{- if not .Values.wireguard.hostNetwork }}
+
+5) 反向代理提示
+
+   经 TLS 反代访问时需设置 wgpanel.cookieSecure=true，
+   并把反代来源网段填入 wgpanel.trustedProxy（如 10.0.0.0/8），
+   否则刷新令牌 Cookie 不会被浏览器回传，登录状态会在 15 分钟后失效。
+{{- end }}

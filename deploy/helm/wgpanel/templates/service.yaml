@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "wgpanel.fullname" . }}
+  labels:
+    {{- include "wgpanel.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - name: panel
+      port: {{ .Values.service.panelPort }}
+      targetPort: panel
+      protocol: TCP
+  selector:
+    {{- include "wgpanel.selectorLabels" . | nindent 4 }}
+---
+{{- if and (eq .Values.wireguard.exposure "LoadBalancer") (not .Values.wireguard.hostNetwork) }}
+# WireGuard 走独立的 LoadBalancer：UDP 不能与面板 HTTP 共用同一个 ClusterIP，
+# 否则客户端流量会被打进只监听 TCP 的面板端口。
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "wgpanel.fullname" . }}-wireguard
+  labels:
+    {{- include "wgpanel.labels" . | nindent 4 }}
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  {{- with .Values.wireguard.loadBalancerIP }}
+  loadBalancerIP: {{ . }}
+  {{- end }}
+  {{- with .Values.wireguard.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  ports:
+    - name: wireguard
+      port: {{ .Values.wgpanel.listenPort }}
+      targetPort: wireguard
+      protocol: UDP
+  selector:
+    {{- include "wgpanel.selectorLabels" . | nindent 4 }}
+{{- end }}

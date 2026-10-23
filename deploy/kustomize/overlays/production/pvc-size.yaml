@@ -1,0 +1,10 @@
+# 生产环境的卷容量通常要大于 base 里的 2Gi。
+# 显式 patch 而不是整体替换，避免漏掉 accessModes。
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wgpanel-data
+spec:
+  resources:
+    requests:
+      storage: 10Gi

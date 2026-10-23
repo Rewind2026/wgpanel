@@ -1,0 +1,132 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "wgpanel.fullname" . }}
+  labels:
+    {{- include "wgpanel.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "wgpanel.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        # 数据卷上的主密钥不能随 Pod 重建丢失，配置变更时保留已有卷。
+        helm.sh/resource-policy: keep
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "wgpanel.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "wgpanel.serviceAccountName" . }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      # host 模式下 Pod 直接使用宿主网络空间，这是宿主已自行配置转发与 NAT 的前提。
+      hostNetwork: {{ .Values.wireguard.hostNetwork }}
+      dnsPolicy: {{ if .Values.wireguard.hostNetwork }}ClusterFirstWithHostNet{{ else }}ClusterFirst{{ end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: wgpanel
+          image: {{ include "wgpanel.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: panel
+              containerPort: 8080
+              protocol: TCP
+            - name: wireguard
+              containerPort: {{ .Values.wgpanel.listenPort }}
+              protocol: UDP
+              {{- if eq .Values.wireguard.exposure "hostPort" }}
+              hostPort: {{ .Values.wireguard.hostPort }}
+              {{- end }}
+          env:
+            - name: WGP_DATA_DIR
+              value: /data
+            - name: WGP_LISTEN_ADDR
+              value: 0.0.0.0:8080
+            - name: TZ
+              value: UTC
+            - name: WGP_NATIVE_MODE
+              value: {{ .Values.wgpanel.nativeMode | quote }}
+            - name: WGP_INTERFACE
+              value: {{ .Values.wgpanel.interface | quote }}
+            - name: WGP_LISTEN_PORT
+              value: {{ .Values.wgpanel.listenPort | quote }}
+            - name: WGP_ADDRESS_CIDR
+              value: {{ .Values.wgpanel.addressCidr | quote }}
+            - name: WGP_MTU
+              value: {{ .Values.wgpanel.mtu | quote }}
+            - name: WGP_DNS
+              value: {{ .Values.wgpanel.dns | quote }}
+            - name: WGP_COOKIE_SECURE
+              value: {{ .Values.wgpanel.cookieSecure | quote }}
+            - name: WGP_TRUSTED_PROXY
+              value: {{ .Values.wgpanel.trustedProxy | quote }}
+            - name: WGP_LOG_LEVEL
+              value: {{ .Values.wgpanel.logLevel | quote }}
+            - name: WGP_LOG_FORMAT
+              value: {{ .Values.wgpanel.logFormat | quote }}
+            - name: WGP_METRICS_ENABLED
+              value: {{ .Values.wgpanel.metricsEnabled | quote }}
+            - name: WGP_SAMPLE_INTERVAL
+              value: {{ .Values.wgpanel.sampleInterval | quote }}
+            - name: WGP_PUBLIC_ENDPOINT
+              value: {{ .Values.wgpanel.publicEndpoint | quote }}
+            - name: WGP_ADMIN_USERNAME
+              value: {{ .Values.admin.username | quote }}
+            {{- include "wgpanel.adminPasswordEnv" . | nindent 12 }}
+            {{- with .Values.wgpanel.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: run
+              mountPath: /run
+      volumes:
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "wgpanel.pvcName" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        # iptables 用 /run/xtables.lock 做并发锁，而 /run 在只读或 root 拥有的
+        # 镜像层里对非 root 进程不可写。挂一个可写的 emptyDir 覆盖整个 /run，
+        # 既解决锁文件，也避免 readOnlyRootFilesystem 打开时 iptables 直接失败。
+        - name: run
+          emptyDir: {}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

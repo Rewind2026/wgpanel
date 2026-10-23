@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wgpanel-data
+  labels:
+    app.kubernetes.io/name: wgpanel
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: wgpanel
+  labels:
+    app.kubernetes.io/name: wgpanel
+# 面板不调用 Kubernetes API，不绑定任何 RBAC 权限。

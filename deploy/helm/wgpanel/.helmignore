@@ -1,0 +1,10 @@
+.git
+.gitignore
+*.tmproj
+.vscode/
+.idea/
+*.tgz
+.DS_Store
+OWNERS
+README.md.gotmpl
+ci/

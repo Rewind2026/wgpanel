@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: wgpanel
+  labels:
+    app.kubernetes.io/name: wgpanel
+spec:
+  type: ClusterIP
+  ports:
+    - name: panel
+      port: 8080
+      targetPort: panel
+  selector:
+    app.kubernetes.io/name: wgpanel
+---
+# WireGuard 走 NodePort：UDP 与 HTTP 不能共用同一个 ClusterIP，
+# 否则客户端流量会打到只监听 TCP 的面板端口上。
+apiVersion: v1
+kind: Service
+metadata:
+  name: wgpanel-wireguard
+  labels:
+    app.kubernetes.io/name: wgpanel
+spec:
+  type: NodePort
+  externalTrafficPolicy: Local
+  ports:
+    - name: wireguard
+      port: 51820
+      targetPort: wireguard
+      protocol: UDP
+      # 固定节点端口便于防火墙放行；冲突时改这里并同步防火墙规则。
+      nodePort: 31820
+  selector:
+    app.kubernetes.io/name: wgpanel

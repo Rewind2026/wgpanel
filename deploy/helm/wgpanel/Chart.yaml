@@ -1,0 +1,17 @@
+apiVersion: v2
+name: wgpanel
+description: WGPanel — WireGuard 管理面板
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.23.0-0"
+home: https://github.com/Rewind2026/wgpanel
+sources:
+  - https://github.com/Rewind2026/wgpanel
+keywords:
+  - wireguard
+  - vpn
+  - networking
+  - security
+maintainers:
+  - name: WGPanel Contributors

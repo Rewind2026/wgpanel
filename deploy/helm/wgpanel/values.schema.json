@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "WGPanel Helm values",
+  "type": "object",
+  "required": ["image", "wireguard", "persistence"],
+  "properties": {
+    "replicaCount": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1,
+      "description": "WireGuard 接口是单例资源，多副本会互相抢占同一张路由表与 NAT 规则，因此只允许 1。"
+    },
+    "image": {
+      "type": "object",
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": { "type": "string" },
+        "pullPolicy": { "enum": ["Always", "IfNotPresent", "Never"] }
+      },
+      "required": ["repository"]
+    },
+    "wireguard": {
+      "type": "object",
+      "properties": {
+        "exposure": { "enum": ["hostPort", "LoadBalancer"] },
+        "hostPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "hostNetwork": { "type": "boolean" }
+      },
+      "required": ["exposure"]
+    },
+    "persistence": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "size": { "type": "string" },
+        "existingClaim": { "type": "string" }
+      },
+      "required": ["enabled"]
+    },
+    "wgpanel": {
+      "type": "object",
+      "properties": {
+        "nativeMode": { "enum": ["bridge", "host"] },
+        "interface": { "type": "string", "maxLength": 15 },
+        "listenPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "addressCidr": { "type": "string" },
+        "mtu": { "type": "integer", "minimum": 1280, "maximum": 9000 },
+        "sampleInterval": { "type": "string" },
+        "logLevel": { "enum": ["debug", "info", "warn", "error"] },
+        "logFormat": { "enum": ["console", "json"] }
+      },
+      "required": ["nativeMode", "interface", "listenPort", "addressCidr"]
+    },
+    "admin": {
+      "type": "object",
+      "properties": {
+        "username": { "type": "string", "minLength": 1 }
+      },
+      "required": ["username"]
+    }
+  }
+}

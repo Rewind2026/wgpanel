@@ -1,0 +1,108 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wgpanel
+  labels:
+    app.kubernetes.io/name: wgpanel
+spec:
+  # WireGuard 接口是宿主唯一资源，两个副本会互相删除对方的接口。
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: wgpanel
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: wgpanel
+    spec:
+      serviceAccountName: wgpanel
+      # host 模式下改成 true：与客户端共享宿主 netns。
+      hostNetwork: false
+      dnsPolicy: ClusterFirst
+      securityContext:
+        # root + 最小能力集。不用 runAsNonRoot 的原因见 values.yaml：
+        # 非 root 配合 cap_add 时容器内 CapEff 可能为 0，wg/iptables 全部 EPERM。
+        runAsUser: 0
+        runAsGroup: 0
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: wgpanel
+          image: ghcr.io/Rewind2026/wgpanel:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              # DAC_OVERRIDE 用于以 root 身份读写属主为 10001 的 PVC，缺它 SQLite 起不来。
+              add: ["NET_ADMIN", "DAC_OVERRIDE"]
+          ports:
+            - name: panel
+              containerPort: 8080
+            - name: wireguard
+              containerPort: 51820
+              protocol: UDP
+          env:
+            - name: WGP_DATA_DIR
+              value: /data
+            - name: WGP_LISTEN_ADDR
+              value: 0.0.0.0:8080
+            - name: WGP_NATIVE_MODE
+              value: bridge
+            - name: WGP_INTERFACE
+              value: wg0
+            - name: WGP_LISTEN_PORT
+              value: "51820"
+            - name: WGP_ADDRESS_CIDR
+              value: 10.8.0.1/24
+            - name: WGP_MTU
+              value: "1420"
+            - name: WGP_DNS
+              value: 1.1.1.1,8.8.8.8
+            - name: WGP_LOG_FORMAT
+              value: json
+            - name: WGP_ADMIN_USERNAME
+              value: admin
+            # 密码通过外部 Secret 注入，示例文件里不写真实口令。
+            - name: WGP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: wgpanel-admin
+                  key: password
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: panel
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: panel
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            # /run 在镜像层里属于 root，非 root 进程无法创建 iptables 锁文件。
+            - name: run
+              mountPath: /run
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: wgpanel-data
+        - name: run
+          emptyDir: {}
+      terminationGracePeriodSeconds: 30
+      nodeSelector:
+        kubernetes.io/os: linux

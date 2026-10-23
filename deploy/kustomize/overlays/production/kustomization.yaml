@@ -1,0 +1,24 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# 生产环境覆盖示例。
+#   cp ../../base/secret.env.example secret.env   # 改成真实强口令
+#   kubectl apply -k .
+#   # 确认集群里已是目标口令后，删除本地明文
+#   rm secret.env
+resources:
+  - ../../base
+
+# 从本地 env 文件生成 Secret。文件名带 hash 后缀，
+# 口令轮换时重新 apply 会自动创建新 Secret 并触发 Pod 重建。
+secretGenerator:
+  - name: wgpanel-admin
+    envs:
+      - secret.env
+
+patches:
+  - path: pvc-size.yaml
+
+images:
+  - name: ghcr.io/Rewind2026/wgpanel
+    newTag: v0.1.0

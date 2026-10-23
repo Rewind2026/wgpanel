@@ -1,0 +1,144 @@
+# WGPanel Helm 默认值
+#
+# 部署前提（与 docker-compose 一致，缺任何一个面板都会进不就绪状态）：
+#   1. 节点已加载 wireguard 内核模块：modprobe wireguard
+#   2. 节点存在 /dev/net/tun
+#   3. 容器具备 NET_ADMIN 与 DAC_OVERRIDE 两项能力（见下方 securityContext）
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/Rewind2026/wgpanel
+  # 默认跟随 Chart 的 appVersion，避免升级 Chart 时镜像标签落后。
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  # 以 root 运行但能力集压到最小两项。
+  #
+  # 这里刻意不用 runAsNonRoot：Docker 实测（28.5 / Linux 6.18）下
+  # `--user 10001` 配合 `--cap-add NET_ADMIN` 时容器内 CapEff 为 0，
+  # wg 与 iptables 操作全部 EPERM。各 CRI 实现对非 root 的 ambient
+  # 能力授予行为并不一致，与其依赖运行时行为，不如显式用 root +
+  # drop ALL 收窄攻击面——真正决定风险面的是能力集，不是 uid。
+  runAsUser: 0
+  runAsGroup: 0
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+    # NET_ADMIN     创建/配置 wg 接口、地址、路由与 NAT 规则。
+    # DAC_OVERRIDE  以 root 身份读写属主为 10001 的 PVC（SQLite 需要）。
+    #                缺少时启动报 "attempt to write a readonly database"，
+    #                该信息具误导性，真实原因是权限不足。
+    add: ["NET_ADMIN", "DAC_OVERRIDE"]
+  readOnlyRootFilesystem: false
+
+service:
+  type: ClusterIP
+  panelPort: 8080
+  annotations: {}
+
+# WireGuard 隧道端口：需要 LoadBalancer 或 hostPort 才能从集群外访问。
+wireguard:
+  # 节点端口模式下用 hostPort 直接占用宿主 UDP 端口，避免云 LB 丢包。
+  # 托管集群没有 hostPort 权限时，请改用 type: LoadBalancer 并确认 LB 支持 UDP。
+  exposure: hostPort   # hostPort | LoadBalancer
+  hostPort: 51820
+  loadBalancerIP: ""
+  loadBalancerSourceRanges: []
+  # host 模式下必须为 true：Pod 与客户端共享宿主 netns，路由与转发由宿主负责，
+  # 面板不应再写 net.ipv4.ip_forward（写了也只影响全局宿主）。
+  hostNetwork: false
+
+# 面板必须为 privileged=false 但拥有 NET_ADMIN；
+# 若集群 PSP/PSA 禁止 NET_ADMIN，需要为该命名空间单独放行。
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: "1"
+    memory: 256Mi
+
+persistence:
+  enabled: true
+  # 多副本部署时必须显式指定 storageClass，ReadWriteOnce 卷无法被多 Pod 同时挂载。
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 2Gi
+  # 已有卷时填 existingClaim，跳过创建。
+  existingClaim: ""
+
+# 首次启动的管理员账户。留空则由面板随机生成并打印到 Pod 日志。
+admin:
+  username: admin
+  # 强烈建议用 --set 或外部 Secret 注入，不要提交到仓库。
+  password: ""
+  existingSecret: ""
+
+wgpanel:
+  # 网络形态：bridge（面板自管转发与 NAT）或 host（宿主已配好，面板只管 WireGuard）。
+  nativeMode: bridge
+  interface: wg0
+  listenPort: 51820
+  addressCidr: 10.8.0.1/24
+  mtu: 1420
+  dns: 1.1.1.1,8.8.8.8
+  # 生成客户端配置里的 Endpoint。留空由面板自动探测出口 IP。
+  publicEndpoint: ""
+  # 反向代理后访问时置 1，否则浏览器不回传刷新 Cookie。
+  cookieSecure: false
+  # 可信代理网段（如 10.0.0.0/8）。留空表示不信任任何代理头，
+  # 真实来源 IP 取 TCP 对端，登录限流才不会被伪造的 X-Forwarded-For 绕过。
+  trustedProxy: ""
+  logLevel: info
+  logFormat: json
+  sampleInterval: 1s
+  metricsEnabled: true
+  extraEnv: []
+
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: panel
+  initialDelaySeconds: 10
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# 就绪探针会真实检查数据库、WireGuard 控制面与网络下发能力，
+# 因此给更长的启动宽限，避免内核接口尚未建好就被反复重启。
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: panel
+  initialDelaySeconds: 15
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 6
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+priorityClassName: ""
+
+# 优雅停机需要时间让 Reconciler 收尾，preStop 等待要小于 terminationGracePeriodSeconds。
+terminationGracePeriodSeconds: 30

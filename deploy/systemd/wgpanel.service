@@ -1,0 +1,59 @@
+[Unit]
+Description=WGPanel — WireGuard 管理面板
+Documentation=https://github.com/Rewind2026/wgpanel
+# netdriver 会写 /proc/sys/net/ipv4/ip_forward 并调用 iptables，
+# 这些动作依赖 network.target 已就绪，否则首次启动会失败并进入重启循环。
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=wgpanel
+Group=wgpanel
+ExecStart=/usr/local/bin/wgpanel
+
+# 非 root 运行但仍需建接口、写路由与 NAT。
+# 内核对 /proc/sys/net/* 的写权限判定用的是 CAP_NET_ADMIN，
+# 因此把该能力放进 ambient 集合即可，不必让进程本身是 uid 0。
+AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN
+# NoNewPrivileges 阻止后续 exec 再抬升权限，与 ambient 能力不冲突：
+# 能力在 exec 服务二进制时已由 systemd 授予。
+NoNewPrivileges=true
+
+# 加固：除数据目录与 /run 外全部只读，进程无法改写系统配置或植入后门。
+ProtectSystem=strict
+ReadWritePaths=/var/lib/wgpanel /run
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelModules=false
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+# iptables 用 /run/xtables.lock 做并发锁，文件属主必须是服务用户，
+# 否则每次改规则都会因拿不到锁而失败。
+ExecStartPre=/usr/bin/install -o wgpanel -g wgpanel -m 0600 /dev/null /run/xtables.lock
+
+# 面板持有 wg 接口与防火墙规则，必须能正常收到 SIGTERM 完成收尾。
+KillSignal=SIGTERM
+TimeoutStopSec=20
+Restart=on-failure
+RestartSec=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=wgpanel
+
+Environment=TZ=UTC
+Environment=WGP_DATA_DIR=/var/lib/wgpanel
+Environment=WGP_LISTEN_ADDR=0.0.0.0:8080
+Environment=WGP_NATIVE_MODE=bridge
+# 管理员初始口令走 EnvironmentFile，而不是写进 unit 文件
+# （unit 文件通常全局可读，任何本地用户都能看到里面的口令）。
+EnvironmentFile=-/etc/wgpanel/wgpanel.env
+
+[Install]
+WantedBy=multi-user.target
