@@ -1,0 +1,111 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发布的标签，例如 v0.1.0'
+        required: true
+
+permissions:
+  contents: write
+  packages: write
+  # cosign 的 keyless 签名走 OIDC 换取 Fulcio 证书并写入 Rekor 透明日志。
+  id-token: write
+
+jobs:
+  release:
+    name: 多架构镜像 + 签名
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - id: version
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # SBOM 与 provenance 随镜像一起推送，便于事后审计与溯源。
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VERSION=${{ steps.version.outputs.tag }}
+            COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+
+      - name: 安装 cosign
+        uses: sigstore/cosign-installer@v3
+
+      # 多架构镜像是一次推送出来的单个 manifest list，所有标签指向同一个 digest。
+      # 因此按标签逐一签名即可，不需要对每个平台单独操作。
+      - name: cosign keyless 签名
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          for tag in $TAGS; do
+            echo "signing ${tag}@${DIGEST}"
+            cosign sign --yes "${tag}@${DIGEST}"
+          done
+
+      - name: 生成 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          generate_release_notes: true
+          body: |
+            ## 拉取
+
+            ```bash
+            docker pull ghcr.io/${{ github.repository }}:${{ steps.version.outputs.tag }}
+            ```
+
+            ## 验证签名
+
+            镜像使用 cosign keyless 签名，证书来自 Fulcio，记录写入 Rekor 透明日志。
+
+            ```bash
+            cosign verify ghcr.io/${{ github.repository }}:${{ steps.version.outputs.tag }} \
+              --certificate-identity-regexp '^https://github.com/${{ github.repository }}/' \
+              --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
+            ```
+
+            验证 SBOM：
+
+            ```bash
+            docker buildx imagetools inspect ghcr.io/${{ github.repository }}:${{ steps.version.outputs.tag }} --format '{{ json .Provenance }}'
+            ```

@@ -1,0 +1,80 @@
+name: 缺陷报告
+description: 报告一个可复现的问题
+title: "[bug] "
+labels: ["bug", "需要复现"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。带内核行为的缺陷（接口、路由、NAT、限速）最好附上宿主环境，
+        否则很难定位。
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 发生了什么
+      description: 期望的行为 vs 实际的行为
+      placeholder: |
+        期望：把客户端的限速从 20 Mbps 调到 50 Mbps，已有连接不中断
+        实际：连接被打断，且 /readyz 返回 503
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. docker run ...（完整命令）
+        2. 打开面板 /peers 页面
+        3. 点击「编辑」修改限速
+        4. 观察客户端连接
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志
+      description: |
+        `docker logs wgpanel --tail 200`，或 systemd 部署下的 `journalctl -u wgpanel -n 200`。
+        含密钥的行请自行打码。
+      render: shell
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: WGPanel 版本
+      description: 面板左下角或 `curl -s localhost:8080/api/v1/version` 的输出
+      placeholder: v0.1.0 / dev
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deploy
+    attributes:
+      label: 部署方式
+      options:
+        - docker run
+        - docker compose
+        - Helm / Kubernetes
+        - Kustomize
+        - systemd（二进制）
+        - 本地 go run
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境
+      placeholder: |
+        宿主内核: 5.15.0-generic
+        Docker: 24.0.7
+        架构: x86_64
+        WGP_NATIVE_MODE: bridge
+        wireguard 模块: 已加载
+    validations:
+      required: false

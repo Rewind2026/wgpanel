@@ -1,0 +1,79 @@
+name: Validate Delivery
+
+on:
+  pull_request:
+    paths:
+      - 'deploy/**'
+      - '.github/**'
+  push:
+    branches: [main]
+    paths:
+      - 'deploy/**'
+      - '.github/**'
+
+permissions:
+  contents: read
+
+jobs:
+  helm:
+    name: Helm · lint / template
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+
+      - uses: helm/kind-action@v1
+
+      - name: helm lint
+        run: helm lint deploy/helm/wgpanel
+
+      # 只渲染不部署：模板语法错误、values 引用错位在这里就会暴露。
+      - name: helm template（默认值）
+        run: helm template wgpanel deploy/helm/wgpanel > /dev/null
+
+      # host 模式 + LoadBalancer + 外部 Secret 是最容易写错的组合，
+      # 默认值渲染通过不代表这条路径也通过。
+      - name: helm template（host 模式 / LoadBalancer / 外部 Secret）
+        run: |
+          helm template wgpanel deploy/helm/wgpanel \
+            --set wgpanel.nativeMode=host \
+            --set wgpanel.hostNetwork=true \
+            --set wireguard.exposure=LoadBalancer \
+            --set service.type=LoadBalancer \
+            --set persistence.existingClaim=existing \
+            --set admin.existingSecret=admin-secret > /dev/null
+
+      - name: helm template（无持久化）
+        run: helm template wgpanel deploy/helm/wgpanel --set persistence.enabled=false > /dev/null
+
+      # WireGuard 接口唯一，多副本会互相删除对方接口，
+      # 因此 values.schema.json 强制 replicaCount <= 1。
+      - name: helm template（拒绝多副本）
+        run: |
+          if helm template wgpanel deploy/helm/wgpanel --set replicaCount=3 > /dev/null 2>&1; then
+            echo "replicaCount>1 未被拒绝：两个副本会争抢同一个 wg 接口"
+            exit 1
+          fi
+
+  kustomize:
+    name: Kustomize · build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: imranismail/setup-kustomize@v2
+        with:
+          kustomize-version: v5.5.0
+
+      - name: base 构建
+        run: kustomize build deploy/kustomize/base > /dev/null
+
+      # overlay 依赖本地 secret.env（已 gitignore），
+      # 这里临时造一个，只为验证模板能渲染。
+      - name: production overlay 构建
+        run: |
+          cp deploy/kustomize/base/secret.env.example deploy/kustomize/overlays/production/secret.env
+          kustomize build deploy/kustomize/overlays/production > /dev/null

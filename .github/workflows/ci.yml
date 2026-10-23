@@ -1,0 +1,133 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# 同一分支的新推送取消上一次未完成的运行，避免队列堆积。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: 后端 · gofmt / vet / test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          # 依赖装一次，后面所有步骤命中模块缓存。
+          cache: true
+
+      # gofmt 是零依赖的纯文本检查，单独放前面：格式问题的反馈最快。
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "以下文件未格式化，请执行 gofmt -w 后提交："
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: 上传覆盖率
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+          retention-days: 7
+
+      - name: 构建静态二进制
+        env:
+          VERSION: ci
+        run: |
+          CGO_ENABLED=0 go build -trimpath \
+            -ldflags "-s -w -X github.com/Rewind2026/wgpanel/internal/version.Version=${VERSION}" \
+            -o wgpanel ./cmd/wgpanel
+
+  frontend:
+    name: 前端 · typecheck / build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: 类型检查
+        run: npm run lint
+
+      - name: 构建
+        run: npm run build
+
+      # 构建产物直写 internal/web/dist，顺带验证 go:embed 目录非空。
+      - name: 上传前端产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: internal/web/dist
+          retention-days: 7
+
+  embed:
+    name: 集成 · 嵌入前端后编译
+    runs-on: ubuntu-latest
+    needs: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # 用前端真实产物替换占位目录，再整体编译一次。
+      # 只在两段各自通过时才能发现「前端构建了但没被嵌进去」这类问题。
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: internal/web/dist
+
+      - name: go build（含真实前端产物）
+        run: go build ./...
+
+  docker:
+    name: 镜像 · 构建检查
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: 构建镜像（不推送）
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: wgpanel:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VERSION=ci
