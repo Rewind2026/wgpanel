@@ -20,5 +20,5 @@ patches:
   - path: pvc-size.yaml
 
 images:
-  - name: ghcr.io/Rewind2026/wgpanel
-    newTag: v0.1.0
+  - name: ghcr.io/rewind2026/wgpanel
+    newTag: v0.9.0

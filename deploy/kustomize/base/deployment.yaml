@@ -31,7 +31,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: wgpanel
-          image: ghcr.io/Rewind2026/wgpanel:latest
+          image: ghcr.io/rewind2026/wgpanel:latest
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false

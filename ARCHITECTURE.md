@@ -28,7 +28,7 @@
 | UI | 简易表单 / 纯文本 | 现代化暗色玻璃拟态仪表盘，全响应式（桌面 + 移动端） |
 | 参数暴露 | 极简，参数写死在 compose | **全量 wgctrl 参数可视化**：ListenPort / MTU / DNS / SaveConfig / AllowedIPs / PersistentKeepalive / 预共享密钥 / 路由表与 fwmark |
 | 监控 | 无 / 仅 `wg show` | SSE 实时推送：CPU/内存/磁盘/网络 IO、隧道总吞吐、每 Peer 握手时间、上下行字节、在线状态、连接时长、IP 分配、历史曲线（1h/24h/7d/30d） |
-| 部署 | 依赖 `NET_ADMIN` + 手动配置 | 单命令：`docker run -d -v wgp-data:/data --cap-add=NET_ADMIN --device /dev/net/tun -p 51820:51820 -p 8080:8080 ghcr.io/Rewind2026/wgpanel:latest` |
+| 部署 | 依赖 `NET_ADMIN` + 手动配置 | 单命令：`docker run -d -v wgp-data:/data --cap-add=NET_ADMIN --device /dev/net/tun -p 51820:51820 -p 8080:8080 ghcr.io/rewind2026/wgpanel:latest` |
 | 网络模式 | 多数强制 host 网络 | **原生兼容 Docker 默认 bridge**，通过 `NET_ADMIN` + 容器内独立 netns 完成 NAT/转发，不需要 `--network host` |
 | 账号 | 无 / 单用户密码 | 单账号模型：首个 owner 由 `WGP_ADMIN_USERNAME` / `WGP_ADMIN_PASSWORD` 初始化，此后只能自助改密；账号相关操作全部进审计日志 |
 | 配置持久化 | wg0.conf 覆盖式 | SQLite 事务化存储 + 自动生成 wg 配置 + 配置版本历史与回滚 |
@@ -358,7 +358,7 @@ docker run -d \
   -p 51820:51820/udp -p 8080:8080/tcp \
   -v wgpanel-data:/data \
   -e WGP_ADMIN_PASSWORD=<首次初始化密码，可选> \
-  ghcr.io/Rewind2026/wgpanel:latest
+  ghcr.io/rewind2026/wgpanel:latest
 ```
 
 不默认授予 `SYS_MODULE`：加载 `wireguard` 内核模块是宿主的职责，现代发行版的 `wireguard` 包已内置该模块，容器内自行加载反而会把权限面扩大到整个宿主内核。

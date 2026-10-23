@@ -1,6 +1,6 @@
 services:
   wgpanel:
-    image: ghcr.io/Rewind2026/wgpanel:latest
+    image: ghcr.io/rewind2026/wgpanel:latest
     container_name: wgpanel
     restart: unless-stopped
 

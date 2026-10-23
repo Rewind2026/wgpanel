@@ -8,7 +8,7 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/Rewind2026/wgpanel
+  repository: ghcr.io/rewind2026/wgpanel
   # 默认跟随 Chart 的 appVersion，避免升级 Chart 时镜像标签落后。
   tag: ""
   pullPolicy: IfNotPresent

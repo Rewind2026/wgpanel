@@ -45,7 +45,7 @@ docker run -d --name wgpanel \
   -p 51820:51820/udp -p 8080:8080/tcp \
   -v wgpanel-data:/data \
   -e WGP_ADMIN_PASSWORD='换成你的强密码' \
-  ghcr.io/Rewind2026/wgpanel:latest
+  ghcr.io/rewind2026/wgpanel:latest
 ```
 
 > 宿主内核**尚未**加载 `wireguard` 模块时，面板会拒绝就绪并在日志中提示 `modprobe wireguard`。

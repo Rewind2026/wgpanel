@@ -5,11 +5,11 @@
 #
 # 用法：
 #   curl -fsSL https://raw.githubusercontent.com/Rewind2026/wgpanel/main/install.sh | sudo bash
-#   ./install.sh --image ghcr.io/Rewind2026/wgpanel:v0.1.0 --panel-port 8080 --wg-port 51820
+#   ./install.sh --image ghcr.io/rewind2026/wgpanel:v0.9.0 --panel-port 8080 --wg-port 51820
 #
 set -euo pipefail
 
-IMAGE="ghcr.io/Rewind2026/wgpanel:latest"
+IMAGE="ghcr.io/rewind2026/wgpanel:latest"
 CONTAINER_NAME="wgpanel"
 VOLUME_NAME="wgpanel-data"
 PANEL_PORT="8080"
@@ -21,7 +21,7 @@ usage() {
 用法: install.sh [选项]
 
 选项:
-  --image <镜像>       容器镜像，默认 ghcr.io/Rewind2026/wgpanel:latest
+  --image <镜像>       容器镜像，默认 ghcr.io/rewind2026/wgpanel:latest
   --name <容器名>      容器名称，默认 wgpanel
   --panel-port <端口>  面板端口映射，默认 8080
   --wg-port <端口>     WireGuard 端口映射，默认 51820
