@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="WGPanel">
+  <!--
+    面板图标：与界面左上角的 Zap 图标同源（2077 霓虹黄 + 暗底），
+    外框用切角矩形呼应面板的直角质感。
+    颜色取自 tailwind 主题的 primary(54 100% 52%) 与 background(220 30% 3%)。
+  -->
+  <defs>
+    <linearGradient id="plate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#161b28" />
+      <stop offset="1" stop-color="#080a10" />
+    </linearGradient>
+    <linearGradient id="bolt" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe14d" />
+      <stop offset="1" stop-color="#f5c518" />
+    </linearGradient>
+  </defs>
+
+  <!-- 切角底板 -->
+  <path
+    d="M10 2 H54 L62 10 V54 L54 62 H10 L2 54 V10 Z"
+    fill="url(#plate)"
+    stroke="#39445c"
+    stroke-width="3"
+  />
+
+  <!-- 闪电：与 lucide Zap 同构，尾部下沉做出速度感 -->
+  <path
+    d="M35.5 8 L19 34.5 H30 L27 56 L45 28.5 H33.5 Z"
+    fill="url(#bolt)"
+    stroke="#0b0d13"
+    stroke-width="2.5"
+    stroke-linejoin="round"
+  />
+</svg>

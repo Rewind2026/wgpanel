@@ -304,6 +304,12 @@ func (s *Server) mountWebUI(r chi.Router) {
 		if info, err := fs.Stat(assets, clean); err == nil && !info.IsDir() {
 			req = req.Clone(req.Context())
 			req.URL.Path = "/" + clean
+			// .webmanifest 不在 Go 内置 MIME 表里，FileServer 会回退成
+			// text/plain，浏览器因 Content-Type 不符而拒绝加载 manifest。
+			// 这里显式指定，不依赖系统 mime.types（容器里不一定有）。
+			if ext := path.Ext(clean); ext == ".webmanifest" {
+				w.Header().Set("Content-Type", "application/manifest+json")
+			}
 			fileServer.ServeHTTP(w, req)
 			return
 		}

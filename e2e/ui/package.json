@@ -4,7 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "test": "node ui_test.mjs && node ui_interact.mjs"
+    "test": "node ui_test.mjs && node ui_interact.mjs",
+    "favicon": "node render-favicon.mjs",
+    "favicon:regression": "node favicon_regression.mjs"
   },
   "devDependencies": {
     "playwright": "^1.64.1"

@@ -79,6 +79,9 @@ domain ← store / wgdriver / netdriver / authn
   引入图表库会让首屏 gzip 体积翻几倍，与「首屏 < 400 KB」的验收标准冲突。
 - TypeScript 开了 `strict` + `noUnusedLocals` + `noUnusedParameters`，
   留一个没用到的 import 就构建失败。
+- 改站点图标只改 `web/public/favicon.svg` 这一个主源文件，
+  然后跑 `cd e2e/ui && node render-favicon.mjs` 重新生成 PNG/ICO 各尺寸并一并提交。
+  不要单独手改生成的 PNG——下次跑脚本会被覆盖。
 
 ### 提交信息
 

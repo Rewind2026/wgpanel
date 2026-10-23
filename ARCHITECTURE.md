@@ -939,6 +939,17 @@ UI 规范：
 - 容错：`ErrorBoundary` 兜住单页渲染异常，提供重试/重载，不会整站白屏。
 - 无障碍：键盘可达、焦点环、ARIA 标签、色彩对比 ≥ 4.5:1。
 
+### 9.1 站点图标
+
+图标在 `web/public/` 下，Vite 构建时原样拷进 `internal/web/dist`，随二进制一起 embed，镜像里不额外增加静态目录。
+
+- 主源是 `favicon.svg`：矢量、体积小（1.1 KB），现代浏览器直接采用。图形与界面左上角的 Logo 同源——切角底板加霓虹黄闪电，颜色取自主题的 `primary` 与 `background`。
+- 兜底是 `favicon.ico`（内嵌 16/32/48）与 `favicon/favicon-*.png`（16~512），覆盖不支持 SVG favicon 的老浏览器与移动端书签。
+- `apple-touch-icon.png`（180×180）给 iOS 主屏，`site.webmanifest` 供 PWA 安装。
+- PNG/ICO 由 `e2e/ui/render-favicon.mjs` 从 SVG 光栅化生成（Playwright 渲染），改 SVG 后重跑该脚本即可同步各尺寸。
+
+有一处必须显式处理：`.webmanifest` 不在 Go 内置 MIME 表里，`http.FileServer` 会回退成 `text/plain`，浏览器因 `Content-Type` 不符而**静默拒绝加载** manifest——页面本身无报错，只是 PWA 安装入口消失。因此 `mountWebUI` 对该扩展名显式指定 `application/manifest+json`，不依赖系统 `mime.types`（容器里未必存在）。
+
 ---
 
 ## 10. 目录结构（仓库）
@@ -974,6 +985,12 @@ wgpanel/
     ├── vite.config.ts
     ├── tailwind.config.ts
     ├── tsconfig.json
+    ├── public/                  #   静态资源原样拷贝到 dist
+    │   ├── favicon.svg          #     站点图标主源（矢量）
+    │   ├── favicon.ico          #     老浏览器兜底（内嵌 16/32/48）
+    │   ├── favicon/             #     PNG 多尺寸（16~512）
+    │   ├── apple-touch-icon.png #     iOS 主屏图标
+    │   └── site.webmanifest     #     PWA manifest
     └── src/
         ├── main.tsx / App.tsx   #   入口与路由表（含懒加载与错误边界）
         ├── lib/                 #   api client / useMetricsStream / useVirtualList / permissions / utils

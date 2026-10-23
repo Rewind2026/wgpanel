@@ -169,7 +169,9 @@ wgpanel/
 │   └── version/             版本信息
 ├── deploy/                  Helm Chart / Kustomize / systemd unit / 反向代理文档
 ├── .github/                 CI、Release、交付物校验、Issue/PR 模板
+├── e2e/                     端到端测试（API / 隧道 / UI）
 └── web/                     React 19 + TypeScript 前端
+    └── public/              站点图标（favicon.svg 为主源，PNG/ICO 兜底）
 ```
 
 ## 当前进度

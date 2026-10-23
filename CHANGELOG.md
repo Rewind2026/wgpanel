@@ -6,6 +6,24 @@
 
 ## [未发布]
 
+### 新增
+
+- **站点图标**。之前面板没有 favicon，浏览器标签页只显示一个默认的地球图标，
+  和 2077 风格的面板摆在一起很突兀。现在补齐整套图标资产：
+  `web/public/favicon.svg` 作为主源（矢量，1.1 KB），图形与界面左上角的 Logo 同源——
+  切角底板加霓虹黄闪电，颜色取自主题的 `primary` 与 `background`；
+  另生成 `favicon.ico`（内嵌 16/32/48）、`favicon/favicon-*.png`（16~512）、
+  `apple-touch-icon.png`（180×180）与 `site.webmanifest`，覆盖老浏览器、移动端书签与 PWA 安装。
+  PNG/ICO 由 `e2e/ui/render-favicon.mjs` 从 SVG 光栅化生成，改 SVG 后重跑即可同步各尺寸。
+
+### 修复
+
+- **PWA manifest 被浏览器静默拒绝加载**。`.webmanifest` 不在 Go 内置 MIME 表里，
+  `http.FileServer` 会把它回退成 `text/plain`，而浏览器要求 manifest 的
+  `Content-Type` 是 `application/manifest+json`，不匹配就**静默丢弃**——
+  页面不报错、控制台无警告，只是 PWA 安装入口消失。
+  `mountWebUI` 现在对该扩展名显式指定类型，且不依赖系统 `mime.types`（容器里未必存在）。
+
 ## [0.9.0] - 2026-10-23
 
 首个对外发布版本。对应 ROADMAP 的 `v0.9.0`（M4 + M5，生产候选 RC）：
