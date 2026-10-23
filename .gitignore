@@ -33,8 +33,9 @@ secret.env
 *.tgz
 
 # 备份
+# 只忽略仓库根目录下的备份产物；写成 backup/ 会连 internal/backup 这个源码包一起匹配掉。
 *.tar.gz
-backup/
+/backup/
 
 # 编辑器与系统
 .idea/
