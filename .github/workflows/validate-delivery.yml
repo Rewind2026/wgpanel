@@ -19,9 +19,9 @@ jobs:
     name: Helm · lint / template
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
         with:
           version: v3.16.3
 
@@ -62,9 +62,9 @@ jobs:
     name: Kustomize · build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: imranismail/setup-kustomize@v2
+      - uses: imranismail/setup-kustomize@v3
         with:
           # 这里只能写不带 v 的裸版本号：该 action 内部会拼成 `kustomize/v<版本>` 去查 release，
           # 写成 v5.5.0 会拼成 kustomize/vv5.5.0 从而 404。
