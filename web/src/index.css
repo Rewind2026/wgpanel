@@ -1,0 +1,392 @@
+@import '@fontsource/chakra-petch/500.css';
+@import '@fontsource/chakra-petch/600.css';
+@import '@fontsource/chakra-petch/700.css';
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
+@import '@fontsource/jetbrains-mono/700.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /*
+   * 赛博朋克 2077 配色。
+   *
+   * 主色取游戏标志性的酸性黄（约 #FCEE0A），承担「主操作 / 当前选中 / 关键数值」；
+   * 青与品红只做辅助霓虹，用于图表区分与装饰，不承载语义状态。
+   * 底色压到接近纯黑（HSL 220 30% 3%），让霓虹发光有足够的对比空间。
+   *
+   * 面板是长期盯着用的运维界面，所以正文用近白（HSL 210 20% 94%）
+   * 而不是纯白，降低长时间阅读的疲劳；饱和度留给状态色。
+   */
+  :root {
+    --background: 220 30% 3%;
+    --foreground: 210 20% 94%;
+
+    --card: 220 24% 6%;
+    --card-foreground: 210 20% 94%;
+
+    /* 2077 标志黄 */
+    --primary: 54 100% 52%;
+    --primary-foreground: 220 40% 4%;
+
+    --secondary: 220 16% 13%;
+    --secondary-foreground: 210 18% 92%;
+
+    --muted: 220 16% 11%;
+    --muted-foreground: 213 12% 62%;
+
+    --accent: 220 18% 15%;
+    --accent-foreground: 54 100% 60%;
+
+    /* 品红：危险与错误，2077 里最刺眼的那一类信号色 */
+    --destructive: 330 100% 62%;
+    --destructive-foreground: 220 40% 4%;
+
+    /* 在线 / 正常 */
+    --success: 158 82% 45%;
+    --success-foreground: 220 40% 4%;
+
+    --warning: 38 100% 55%;
+    --warning-foreground: 220 40% 4%;
+
+    --border: 220 16% 20%;
+    --input: 220 16% 18%;
+    --ring: 54 100% 52%;
+
+    /* 辅助霓虹 */
+    --neon-cyan: 187 100% 50%;
+    --neon-magenta: 330 100% 62%;
+    --neon-yellow: 54 100% 52%;
+
+    --radius: 2px;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    /* 移动端安全区适配，避免刘海屏遮挡底栏 */
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /*
+   * 背景层：三段叠加，从下到上是网格、环境光、扫描线。
+   * 全部用 CSS 渐变绘制，不引入任何图片资源。
+   *
+   * 网格给面板一个「有坐标系」的参照（2077 的 HUD 底纹），
+   * 环境光在左上（黄）与右下（青）制造光源方向感，
+   * 扫描线压低透明度叠加，制造 CRT 质感而不影响文字对比度。
+   */
+  body {
+    background-image:
+      /* CRT 扫描线 */
+      repeating-linear-gradient(
+        0deg,
+        hsl(220 40% 8% / 0.55) 0px,
+        hsl(220 40% 8% / 0.55) 1px,
+        transparent 1px,
+        transparent 3px
+      ),
+      /* HUD 网格 */
+      linear-gradient(hsl(var(--neon-cyan) / 0.045) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--neon-cyan) / 0.045) 1px, transparent 1px),
+      /* 环境光 */
+      radial-gradient(60rem 42rem at 8% -8%, hsl(var(--primary) / 0.09), transparent 62%),
+      radial-gradient(52rem 38rem at 96% 4%, hsl(var(--neon-cyan) / 0.075), transparent 60%),
+      radial-gradient(46rem 40rem at 50% 108%, hsl(var(--neon-magenta) / 0.06), transparent 62%);
+    background-size:
+      100% 3px,
+      44px 44px,
+      44px 44px,
+      100% 100%,
+      100% 100%,
+      100% 100%;
+    background-attachment: fixed;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+
+  /* 数字统一等宽，避免实时刷新时列宽跳动 */
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* 滚动条做成细窄的 HUD 滑块，默认低调，悬停才亮出霓虹 */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: hsl(220 24% 6%);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(220 14% 22%);
+    border: 2px solid hsl(220 24% 6%);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--primary) / 0.55);
+  }
+
+  /* 原生 select 的下拉面板跟随主题，否则在深色下会弹出白底 */
+  select option {
+    background: hsl(220 24% 8%);
+    color: hsl(210 20% 94%);
+  }
+}
+
+@layer components {
+  /*
+   * 面板：2077 的核心容器语言。
+   *
+   * 用「切角 + 硬描边 + 顶部亮线」代替圆角与阴影：
+   * 右上角斜切 10px，左下角斜切 6px，配合左侧一道黄色标识条，
+   * 让卡片读起来像一块被切割过的金属面板而不是一块圆角玻璃。
+   */
+  .glass-card {
+    @apply relative rounded-sm border border-border bg-card;
+    clip-path: polygon(
+      10px 0,
+      100% 0,
+      100% calc(100% - 6px),
+      calc(100% - 6px) 100%,
+      0 100%,
+      0 10px
+    );
+  }
+
+  /*
+   * 贴底抽屉形态（对话框在移动端）。
+   * 小屏下面板宽度等于视口，切角会正好啃掉内容，
+   * 所以窄屏取消斜切、恢复直角，sm 以上再切回面板语言。
+   */
+  @media (max-width: 639px) {
+    .panel-sheet {
+      clip-path: none;
+      border-radius: 0;
+    }
+  }
+
+  /* 面板顶部一道 1px 亮线，强化「这是独立模块」的读感。
+   *
+   * @apply 只内联声明，不会带上伪元素规则，
+   * 所以这里必须把 .stat-tile 一起写进选择器，否则指标卡会缺这道顶线。
+   */
+  .glass-card::before,
+  .stat-tile::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      hsl(var(--primary) / 0.55),
+      hsl(var(--neon-cyan) / 0.25) 45%,
+      transparent
+    );
+    pointer-events: none;
+  }
+
+  /* 指标卡：面板 + 更明显的黄色边光 */
+  .stat-tile {
+    @apply glass-card p-4 sm:p-5;
+  }
+
+  /*
+   * 面板头左侧的竖直黄条。
+   * 这是 2077 面板最稳定的识别符号，扫一眼就知道是哪个模块，
+   * 比圆角和阴影更早被识别，因此保留为每个面板头的固定装饰。
+   */
+  .panel-head {
+    position: relative;
+  }
+
+  .panel-head::before {
+    content: '';
+    position: absolute;
+    top: 14px;
+    bottom: 14px;
+    left: 0;
+    width: 2px;
+    background: hsl(var(--primary));
+    box-shadow: 0 0 10px hsl(var(--primary) / 0.7);
+  }
+
+  .stat-tile::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    box-shadow: inset 0 0 22px -14px hsl(var(--primary) / 0.7);
+  }
+
+  /*
+   * 警示条纹：2077 里到处都是的黄黑斜纹带。
+   * 用于区块头部的装饰条与「处理中」状态提示。
+   */
+  .hazard-stripes {
+    background-image: repeating-linear-gradient(
+      -45deg,
+      hsl(var(--primary) / 0.9) 0 6px,
+      transparent 6px 12px
+    );
+  }
+
+  .hazard-stripes-muted {
+    background-image: repeating-linear-gradient(
+      -45deg,
+      hsl(var(--muted-foreground) / 0.35) 0 4px,
+      transparent 4px 8px
+    );
+  }
+
+  /*
+   * 故障字：双层 RGB 色散。
+   * 用 ::before/::after 复制文字并向左下 / 向右下偏移一点点，
+   * 只有在动画的关键帧里才瞬移，多数时间静止，不会持续干扰阅读。
+   */
+  .glitch {
+    position: relative;
+    display: inline-block;
+  }
+
+  .glitch::before,
+  .glitch::after {
+    content: attr(data-text);
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    clip-path: inset(0 0 0 0);
+  }
+
+  .glitch::before {
+    color: hsl(var(--neon-magenta));
+    animation: glitch-a 3.6s steps(1, end) infinite;
+  }
+
+  .glitch::after {
+    color: hsl(var(--neon-cyan));
+    animation: glitch-b 3.6s steps(1, end) infinite;
+  }
+
+  /* 数字：等宽 + 轻微霓虹外发光，读数时更「 instrumentation」 */
+  .hud-value {
+    @apply font-mono tabular-nums;
+    text-shadow: 0 0 14px hsl(var(--primary) / 0.35);
+  }
+
+  .hud-label {
+    @apply font-display text-[10px] font-semibold uppercase;
+    /* 中文没有 uppercase 效果，靠字距拉开标签感 */
+    letter-spacing: 0.16em;
+  }
+
+  /* 四角标记：给关键面板加「瞄准框」质感，纯装饰 */
+  .hud-corners {
+    position: relative;
+  }
+
+  .hud-corners::before,
+  .hud-corners::after {
+    content: '';
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    pointer-events: none;
+  }
+
+  .hud-corners::before {
+    top: -1px;
+    left: -1px;
+    border-top: 1px solid hsl(var(--primary) / 0.8);
+    border-left: 1px solid hsl(var(--primary) / 0.8);
+  }
+
+  .hud-corners::after {
+    right: -1px;
+    bottom: -1px;
+    border-right: 1px solid hsl(var(--neon-cyan) / 0.7);
+    border-bottom: 1px solid hsl(var(--neon-cyan) / 0.7);
+  }
+
+  /* 数据表：去掉圆角与斑马纹，改用发光表头与悬停高亮行 */
+  .hud-table {
+    @apply w-full border-collapse text-sm;
+  }
+
+  .hud-table thead th {
+    @apply border-b border-border bg-muted/60 px-3 py-2 text-left font-display text-[10px] font-semibold uppercase text-muted-foreground;
+    letter-spacing: 0.14em;
+    white-space: nowrap;
+  }
+
+  .hud-table tbody td {
+    @apply border-b border-border/50 px-3 py-2 align-middle;
+  }
+
+  .hud-table tbody tr {
+    @apply transition-colors;
+  }
+
+  .hud-table tbody tr:hover {
+    background-color: hsl(var(--primary) / 0.06);
+  }
+
+  /*
+   * 面板内的次级容器：配置行、列表项、代码块、密钥展示框。
+   *
+   * 这些元素出现频率很高（一屏能有一二十个），如果每个都切角，
+   * 斜线会连成一片噪点，反而看不清层级。所以这里只给「暗槽 + 细描边」，
+   * 把切角留给真正的面板边界，形成主次对比。
+   */
+  .hud-slot {
+    @apply rounded-sm border border-border/70 bg-muted/25;
+  }
+
+  /* 移动端横向滚动时隐藏滚动条，避免与手势冲突 */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+/*
+ * 尊重用户的减少动态偏好。
+ *
+ * 高强度视觉里所有故障、扫描、闪烁、条纹漂移都属于装饰，
+ * 关掉之后页面必须依然是完整可用的静态界面，
+ * 所以这里直接停掉动画而不是降级成慢速版本。
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* 故障字的色散副本在静止状态下仍然会重影，这里一并隐藏 */
+  .glitch::before,
+  .glitch::after {
+    display: none;
+  }
+}
