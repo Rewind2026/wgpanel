@@ -1,0 +1,49 @@
+# 依赖
+node_modules/
+
+# 前端构建产物：由 `npm run build` 生成后被 go:embed 嵌入二进制，不入库。
+# 仅保留占位文件，保证未构建前端时 Go 工程也能编译。
+internal/web/dist/*
+!internal/web/dist/.gitkeep
+
+# 编译产物
+/wgpanel
+/wgpanel.exe
+/bin/
+
+# Python 字节码
+__pycache__/
+*.py[cod]
+
+# TypeScript 增量构建缓存
+*.tsbuildinfo
+
+# 本地配置与密钥——绝不能提交
+.env
+.env.local
+*.key
+master.key
+runtime.secret
+/data/
+
+# Kustomize 生成的本地明文口令（模板为 secret.env.example）
+secret.env
+
+# Helm 打包产物
+*.tgz
+
+# 备份
+*.tar.gz
+backup/
+
+# 编辑器与系统
+.idea/
+.vscode/
+.DS_Store
+*.swp
+
+# 日志
+*.log
+
+# e2e 依赖
+e2e/ui/node_modules/

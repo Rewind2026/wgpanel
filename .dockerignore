@@ -1,0 +1,23 @@
+# 依赖目录（由各构建阶段自行安装）
+node_modules
+web/node_modules
+
+# 注意：internal/web/dist 不排除。
+# web 阶段的产物通过 COPY --from=web 写入 api 阶段，会覆盖上下文中的同名目录；
+# 上下文里的占位文件用于满足 go:embed 在无产物时也能编译的约束。
+
+# 本地配置与密钥：绝不能进镜像
+.env
+.env.local
+*.key
+master.key
+runtime.secret
+
+# 版本控制与开发期文件
+.git
+.gitignore
+.idea
+.vscode
+*.log
+*.md
+!README.md
