@@ -46,9 +46,18 @@ export function TrafficChart({
   toTs: number
   height?: number
 }) {
-  const model = useMemo(() => buildModel(points, fromTs, toTs), [points, fromTs, toTs])
+  // 空数据必须在 useMemo 内部短路，不能把早退写在 useMemo 之前：
+  // 那样会导致本组件渲染的 hook 数量随 points 是否为空而变化，
+  // React 会抛 "Rendered fewer hooks than expected"。
+  //
+  // buildModel 会访问 points[points.length - 1]（面积路径的收口点），
+  // points 为空时是 undefined.ts，直接抛 TypeError 把整个页面打崩。
+  const model = useMemo(
+    () => (points.length === 0 ? null : buildModel(points, fromTs, toTs)),
+    [points, fromTs, toTs],
+  )
 
-  if (points.length === 0) {
+  if (!model) {
     return (
       <div
         className="flex items-center justify-center border border-dashed border-border text-sm text-muted-foreground"

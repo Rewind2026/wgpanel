@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { App } from '@/App'
 import { ApiError } from '@/lib/api'
 import { AuthProvider } from '@/components/providers/AuthProvider'
+import { MetricsProvider } from '@/components/providers/MetricsProvider'
 import { ToastProvider } from '@/components/providers/ToastProvider'
 import '@/index.css'
 
@@ -32,7 +33,15 @@ createRoot(container).render(
       <BrowserRouter>
         <ToastProvider>
           <AuthProvider>
-            <App />
+            {/*
+              MetricsProvider 必须在 AuthProvider 之内：
+              SSE 连接需要当前登录态判断是否持有 metrics:read 权限。
+              它挂在路由之外，SSE 连接的生命周期跟随会话而不是跟随路由，
+              切菜单不再销毁重建 EventSource。
+            */}
+            <MetricsProvider>
+              <App />
+            </MetricsProvider>
           </AuthProvider>
         </ToastProvider>
       </BrowserRouter>

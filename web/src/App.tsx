@@ -74,9 +74,17 @@ function Guarded({
   permission?: Permission
   children: React.ReactNode
 }) {
+  const location = useLocation()
+
   return (
     <RequirePermission permission={permission}>
-      <ErrorBoundary>
+      {/*
+        key 绑定路由路径：路由切换时强制重建错误边界实例。
+        不加的话，React 会在同类型路由元素之间复用组件实例，
+        上一个页面抛出的 error 会留在 state 里，导致新路由直接渲染
+        旧页面的错误卡片——用户看到的就是「切菜单后功能未正确加载」。
+      */}
+      <ErrorBoundary key={location.pathname}>
         <Suspense fallback={<FullScreenLoader />}>{children}</Suspense>
       </ErrorBoundary>
     </RequirePermission>
