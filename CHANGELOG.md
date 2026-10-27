@@ -4,10 +4,34 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [未发布]
+## [0.10.0] - 2026-10-27
 
 ### 新增
 
+- **四种网络部署模式**：`bridge` / `host` / `ipvlan` / `macvlan`，每种模式对应一份
+  完整独立的 compose 文件（`docker-compose{,.host,.ipvlan,.macvlan}.yml`），互不叠加。
+  `WGP_NATIVE_MODE` 告知面板当前形态，影响 Endpoint 探测与能力判定。
+  L2 模式（ipvlan/macvlan）容器直挂物理二层，IPv4 从宿主网段分配、无需端口映射；
+  **IPv6 不配置 v6 子网**，以端点级 `com.docker.network.endpoint.sysctls` 打开
+  `disable_ipv6=0` 与 `accept_ra=2`，容器内再注入 `all.forwarding=1` 等 netns 级开关，
+  组合出 **RA/SLAAC 路由器下发**：容器 eth0 直接从上游路由器拿全局地址（GUA），
+  外部设备可直连 WireGuard，家宽前缀轮换后内核自动跟随。endpoint sysctls 需要
+  Docker ≥ 27 / Compose ≥ v2.27.1。
+- **一键启动脚本 `scripts/up.sh`**：按 `WGP_NETWORK_MODE` 自动选择 compose 文件，
+  L2 模式前置校验必填参数、CIDR 合法性、网关属于子网、ipvlan parent 独占、
+  固定 IPv4 与宿主已用地址冲突（撞地址会抢 ARP 致宿主失联）。
+- **`GET /api/v1/system/network`**：返回部署模式、全部接口地址、上行接口、
+  当前探测 Endpoint 与 IPv6 RA 链路诊断（`disable_ipv6` / `accept_ra` / `forwarding`
+  三颗内核开关；sysctl 可写时自动自愈，只读时给出 compose 修复提示）。
+- **系统运维页「网络」卡**：展示模式徽章、上行接口与全局 v6、RA 链路三开关状态、
+  全部接口地址明细，15s 轮询；侧栏同步显示当前网络模式。
+- **Endpoint 探测模式感知**：非 bridge 模式下在上行接口上探测候选地址——
+  IPv4 放行 RFC1918（局域网直连场景），IPv6 只接受全局地址；
+  bridge 保持原有探测优先级（面板设置 > 容器出口 IP）。
+- **全局唯一监控流**：监控 SSE 连接从「每页面各自建立」改为 `MetricsProvider`
+  全局持有一条，切菜单不再销毁重建（省去重复换票请求，控制台不再出现
+  `net::ERR_ABORTED` 红色报错）；`useMetricsStream` 退化为纯订阅。
+  另附 `e2e/ui/sse_measure.mjs` 测量连接行为。
 - **站点图标**。之前面板没有 favicon，浏览器标签页只显示一个默认的地球图标，
   和 2077 风格的面板摆在一起很突兀。现在补齐整套图标资产：
   `web/public/favicon.svg` 作为主源（矢量，1.1 KB），图形与界面左上角的 Logo 同源——
@@ -23,6 +47,13 @@
   `Content-Type` 是 `application/manifest+json`，不匹配就**静默丢弃**——
   页面不报错、控制台无警告，只是 PWA 安装入口消失。
   `mountWebUI` 现在对该扩展名显式指定类型，且不依赖系统 `mime.types`（容器里未必存在）。
+- **路由切换后显示上一页的错误卡片**。`ErrorBoundary` 实例在同类路由元素间被 React
+  复用，上一个页面抛出的 error 留在 state 里，新路由直接渲染旧错误。现在以
+  路由路径为 key 强制重建错误边界。
+- **bridge compose 的数据卷缺显式 `name:`**，目录名变化或换 compose 文件时
+  会静默新建空卷，看起来像数据「丢失」。四份 compose 统一固定为 `wgpanel-data`；
+  同时镜像标签改为 `WGP_IMAGE` 变量（默认仍是 `ghcr.io/rewind2026/wgpanel:latest`），
+  自建镜像不再需要手改 compose。
 
 ## [0.9.0] - 2026-10-23
 

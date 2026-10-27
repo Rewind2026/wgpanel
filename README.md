@@ -69,6 +69,39 @@ docker compose up -d
 
 - 宿主内核已加载 `wireguard` 模块：`sudo modprobe wireguard`
 - Docker 20.10+（非 root 容器需要该版本起才把 `--cap-add` 放进 ambient 集合）
+- ipvlan / macvlan 模式需 Docker ≥ 27、Compose ≥ v2.27.1（endpoint sysctls 支持）
+
+## 网络部署模式
+
+四种模式各对应一份**完整独立**的 compose 文件，互不叠加，任何 Compose 版本可用：
+
+| 模式 | compose 文件 | 特点 | IPv6 |
+|---|---|---|---|
+| `bridge`（默认） | `docker-compose.yml` | 容器独立 netns，端口经 docker 发布 | 经 docker 网络 |
+| `host` | `docker-compose.host.yml` | 共享宿主网络栈，源地址真实 | 随宿主 |
+| `ipvlan` | `docker-compose.ipvlan.yml` | 容器直挂二层、与父接口共享 MAC | **RA/SLAAC 路由器下发** |
+| `macvlan` | `docker-compose.macvlan.yml` | 容器直挂二层、独占 MAC | **RA/SLAAC 路由器下发** |
+
+L2 模式（ipvlan/macvlan）启动：
+
+```bash
+# 方式一：up.sh（推荐，含 L2 参数校验与宿主地址冲突预检）
+WGP_NETWORK_MODE=macvlan \
+WGP_L2_PARENT=ens18 WGP_L2_SUBNET=192.168.50.0/24 WGP_L2_GATEWAY=192.168.50.1 \
+  ./scripts/up.sh
+
+# 方式二：直接编辑 compose 文件顶部 x-l2-* 三行后
+docker compose -f docker-compose.macvlan.yml up -d
+```
+
+要点：
+
+- 镜像默认取 `ghcr.io/rewind2026/wgpanel:latest`，四份 compose 均可用 `WGP_IMAGE=本地标签 ./scripts/up.sh` 换成自建镜像。
+- 容器 IPv4 从宿主网段分配（`WGP_L2_IPV4` 可固定，留空自动分配），面板 `http://<容器IP>:8080`、WireGuard `<容器IP>:51820/udp`，无需端口映射；容器与宿主相互隔离（macvlan 内核限制），需从局域网其他设备访问面板。
+- **IPv6 不配置 v6 子网**：网络不带 v6 段，端点上以 `com.docker.network.endpoint.sysctls` 打开 `disable_ipv6=0` 与 `accept_ra=2`，容器内再注入 `net.ipv6.conf.all.forwarding=1` 等 netns 级 sysctl——组合效果是 eth0 直接从上游路由器 RA 拿全局地址（GUA），外部设备可直连 WireGuard；家宽前缀轮换后内核自动跟随，配置永不作废。
+- ipvlan 的 parent 独占（同网卡仅一条 ipvlan 网络）；macvlan 需要网络允许同端口多 MAC（WiFi 与部分云环境不行，此时选 ipvlan）。
+- 固定容器 IPv4 时**不能填宿主正在用的地址**（会抢 ARP 导致宿主失联），up.sh 会预检拦截。
+- 部署后可在「系统运维」页的**网络**卡查看模式、接口地址与 RA 链路诊断（sysctl 可写时自动自愈，只读时给出 compose 修复提示）。
 
 ## 本地开发
 
@@ -106,7 +139,7 @@ cd web && npm run dev           # 终端 2
 | `WGP_LISTEN_PORT` | `51820` | WireGuard UDP 端口。**仅首次初始化生效**，之后请在服务端设置页修改 |
 | `WGP_ADDRESS_CIDR` | `10.8.0.1/24` | 隧道网段。**仅首次初始化生效**；修改后已分配的客户端地址不会自动迁移 |
 | `WGP_MTU` | `1420` | 接口 MTU。**仅首次初始化生效**；容器网络下建议 ≤ 宿主 MTU − 80 |
-| `WGP_NATIVE_MODE` | `bridge` | `bridge` = 容器内独立 netns；`host` = 使用宿主网络栈 |
+| `WGP_NATIVE_MODE` | `bridge` | 部署网络模式：`bridge` / `host` / `ipvlan` / `macvlan`，见「网络部署模式」。L2 模式还需 `WGP_L2_PARENT` / `WGP_L2_SUBNET` / `WGP_L2_GATEWAY`（可选 `WGP_L2_IPV4` / `WGP_L2_NETWORK_NAME`） |
 | `WGP_SAMPLE_INTERVAL` | `1s` | 监控采样间隔（200ms ~ 10s） |
 | `WGP_RECONCILE_INTERVAL` | `2s` | 期望态与内核状态的一致性检查周期 |
 | `WGP_TRUSTED_PROXY` | 空 | 可信反向代理网段。**不要填 `0.0.0.0/0`**，否则任何人可伪造来源 IP 绕过登录限流 |

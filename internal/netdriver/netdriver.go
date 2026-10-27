@@ -33,7 +33,21 @@ const (
 	// ip_forward 开关与宿主防火墙是同一个对象，
 	// 面板擅自改写等同于修改宿主策略，因此一律跳过。
 	ModeHost Mode = "host"
+	// ModeIpvlan / ModeMacvlan 是 L2 直挂网络：容器经虚拟链路直接接入物理二层，
+	// eth0 上持有局域网真实地址（IPv4 由 IPAM 分配，IPv6 由上游路由器 RA/SLAAC 下发）。
+	//
+	// 对面板而言这两种模式与 bridge 的网络层职责完全一致——
+	// 转发、路由、NAT 都在容器自己的 netns 里，必须照常下发；
+	// 差别只在对外可达性：eth0 的地址就是客户端可直连的 Endpoint，
+	// 不再是 bridge 下的 NAT 内网地址。因此它们走 bridge 的同一条
+	// 网络调谐路径，只在 Endpoint 探测与 RA 诊断上做模式感知。
+	ModeIpvlan Mode = "ipvlan"
+	// ModeMacvlan 见 ModeIpvlan。
+	ModeMacvlan Mode = "macvlan"
 )
+
+// IsL2 报告模式是否为 L2 直挂（ipvlan/macvlan）。
+func (m Mode) IsL2() bool { return m == ModeIpvlan || m == ModeMacvlan }
 
 // ParseMode 解析网络模式字符串，未知值返回错误而不是静默降级。
 func ParseMode(s string) (Mode, error) {
@@ -42,8 +56,12 @@ func ParseMode(s string) (Mode, error) {
 		return ModeBridge, nil
 	case ModeHost:
 		return ModeHost, nil
+	case ModeIpvlan:
+		return ModeIpvlan, nil
+	case ModeMacvlan:
+		return ModeMacvlan, nil
 	}
-	return "", fmt.Errorf("netdriver: native mode must be bridge or host, got %q", s)
+	return "", fmt.Errorf("netdriver: native mode must be bridge, host, ipvlan or macvlan, got %q", s)
 }
 
 // Capabilities 描述容器内实际可用的网络能力。

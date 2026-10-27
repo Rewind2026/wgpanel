@@ -10,7 +10,35 @@ import (
 
 	"github.com/Rewind2026/wgpanel/internal/authn"
 	"github.com/Rewind2026/wgpanel/internal/domain"
+	"github.com/Rewind2026/wgpanel/internal/netdriver"
 )
+
+// handleSystemNetwork 返回部署的网络形态诊断：
+// 进程所处模式、各接口地址、上行接口与 IPv6 RA/SLAAC 链路状态。
+//
+// L2 模式（ipvlan/macvlan）的 IPv6 依赖上游路由器 RA 下发，链路上
+// disable_ipv6 / accept_ra / forwarding 三颗内核开关缺一不可；
+// 容器内 sysctl 可写时顺带自愈前两颗，只读（compose 未注入且 /proc/sys ro）
+// 时原样报告问题，让界面给出「去改 compose」而不是无解的报错。
+// bridge/host 模式只读检查，不产生副作用。
+func (s *Server) handleSystemNetwork(w http.ResponseWriter, r *http.Request) {
+	mode := s.netMode
+	uplink := netdriver.DefaultUplink()
+	var ra netdriver.RAStatus
+	if mode.IsL2() {
+		ra = netdriver.EnsureRA(uplink)
+	} else {
+		ra = netdriver.InspectRA(uplink)
+	}
+	respondJSON(w, http.StatusOK, map[string]any{
+		"mode":       string(mode),
+		"uplink":     uplink,
+		"interfaces": netdriver.EnumerateInterfaces(),
+		"ra":         ra,
+		// 当前探测到的对外 Endpoint，与订阅/导出使用同一来源，便于对照排查。
+		"endpoint": s.publicEndpoint(),
+	})
+}
 
 // handleGetSettings 返回运行时设置。
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {

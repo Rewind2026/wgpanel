@@ -105,6 +105,8 @@ func (s *Server) handleIssueStreamTicket(w http.ResponseWriter, r *http.Request)
 }
 
 // handleMe 返回当前登录用户。
+// netMode 一并返回：侧栏与诊断页要按部署形态显示「桥接/Host/IPvlan/Macvlan」，
+// 复用这个每页必调的接口，前端不需要为了一行文案多发一次请求。
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	p := principalFrom(r.Context())
 	if p == nil {
@@ -116,6 +118,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		"username":    p.Username,
 		"role":        p.Role,
 		"permissions": p.Role.Permissions(),
+		"netMode":     string(s.netMode),
 	})
 }
 

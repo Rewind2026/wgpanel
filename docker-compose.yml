@@ -1,6 +1,6 @@
 services:
   wgpanel:
-    image: ghcr.io/rewind2026/wgpanel:latest
+    image: ${WGP_IMAGE:-ghcr.io/rewind2026/wgpanel:latest}
     container_name: wgpanel
     restart: unless-stopped
 
@@ -71,4 +71,6 @@ services:
         max-file: "3"
 
 volumes:
+  # 显式 name：与目录名解耦，改名不会静默新建空卷丢数据。
   wgpanel-data:
+    name: wgpanel-data

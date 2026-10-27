@@ -17,6 +17,18 @@ func TestValidateAcceptsDefaults(t *testing.T) {
 	}
 }
 
+// 四种部署模式都是合法配置：compose 文件按模式硬编码 WGP_NATIVE_MODE，
+// 校验一旦拒绝某一种，对应部署会以 exit 1 启动失败而不是降级运行。
+func TestValidateAcceptsAllNetworkModes(t *testing.T) {
+	for _, m := range []string{"bridge", "host", "ipvlan", "macvlan"} {
+		c := Default()
+		c.NativeMode = m
+		if err := c.Validate(); err != nil {
+			t.Errorf("NativeMode=%q 应为合法模式: %v", m, err)
+		}
+	}
+}
+
 func TestValidateRejectsBadValues(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -25,7 +37,7 @@ func TestValidateRejectsBadValues(t *testing.T) {
 		{"空数据目录", func(c *Config) { c.DataDir = "" }},
 		{"相对数据目录", func(c *Config) { c.DataDir = "data" }},
 		{"空监听地址", func(c *Config) { c.ListenAddr = "" }},
-		{"未知原生模式", func(c *Config) { c.NativeMode = "macvlan" }},
+		{"未知原生模式", func(c *Config) { c.NativeMode = "gre" }},
 		{"端口为 0", func(c *Config) { c.ListenPort = 0 }},
 		{"端口越界", func(c *Config) { c.ListenPort = 70000 }},
 		{"MTU 过小", func(c *Config) { c.MTU = 1200 }},

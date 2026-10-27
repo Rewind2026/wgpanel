@@ -120,7 +120,14 @@ func TestParseMode(t *testing.T) {
 			t.Errorf("ParseMode(%q) = (%v, %v)", in, m, err)
 		}
 	}
-	for _, in := range []string{"", "none", "macvlan"} {
+	// L2 直挂模式：解析成功且 IsL2 为真。
+	for _, in := range []string{"ipvlan", "IPVLAN", "macvlan", " MacVlan "} {
+		m, err := ParseMode(in)
+		if err != nil || !m.IsL2() {
+			t.Errorf("ParseMode(%q) = (%v, %v)，期望 L2 模式", in, m, err)
+		}
+	}
+	for _, in := range []string{"", "none", "gre"} {
 		if _, err := ParseMode(in); err == nil {
 			t.Errorf("ParseMode(%q) 应返回错误", in)
 		}

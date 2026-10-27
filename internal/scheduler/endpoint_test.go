@@ -69,3 +69,32 @@ func TestIsPrivateIP(t *testing.T) {
 		}
 	}
 }
+
+// normalizeLANEndpoint 是 L2/host 模式上行接口地址的专用规整：
+// 放行私网 v4（局域网客户端可达），其余不可达形态依旧拒绝。
+func TestNormalizeLANEndpoint(t *testing.T) {
+	accepted := map[string]string{
+		"192.168.50.2":  "192.168.50.2",
+		"10.0.0.5":      "10.0.0.5",
+		" 203.0.113.7 ": "203.0.113.7",
+	}
+	for in, want := range accepted {
+		if got := normalizeLANEndpoint(in); got != want {
+			t.Errorf("normalizeLANEndpoint(%q) = %q，期望 %q", in, got, want)
+		}
+	}
+	rejected := []string{
+		"",
+		"192.168.50.2/24", // 带掩码
+		"127.0.0.1",       // 回环
+		"169.254.1.1",     // 链路本地
+		"0.0.0.0",         // 未指定
+		"fe80::1",         // IPv6 不走这一级（由 normalizeEndpoint 处理）
+		"not-an-ip",
+	}
+	for _, in := range rejected {
+		if got := normalizeLANEndpoint(in); got != "" {
+			t.Errorf("normalizeLANEndpoint(%q) = %q，期望空串", in, got)
+		}
+	}
+}

@@ -19,7 +19,7 @@ type Config struct {
 	TrustedProxy string
 
 	// 网络
-	NativeMode  string // bridge | host
+	NativeMode  string // bridge | host | ipvlan | macvlan
 	Interface   string
 	ListenPort  int
 	MTU         int
@@ -185,9 +185,9 @@ func (c Config) Validate() error {
 		return fmt.Errorf("config: listen addr must not be empty")
 	}
 	switch c.NativeMode {
-	case "bridge", "host":
+	case "bridge", "host", "ipvlan", "macvlan":
 	default:
-		return fmt.Errorf("config: native mode must be bridge or host, got %q", c.NativeMode)
+		return fmt.Errorf("config: native mode must be bridge, host, ipvlan or macvlan, got %q", c.NativeMode)
 	}
 	if c.ListenPort < 1 || c.ListenPort > 65535 {
 		return fmt.Errorf("config: listen port %d out of range", c.ListenPort)

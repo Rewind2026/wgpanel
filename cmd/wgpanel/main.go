@@ -149,7 +149,7 @@ func run() error {
 	}
 
 	endpoint := func(ctx context.Context) string {
-		return scheduler.DetectPublicEndpoint(ctx, serverSvc, st.SettingRepo())
+		return scheduler.DetectPublicEndpoint(ctx, netMode, serverSvc, st.SettingRepo())
 	}
 	collector := monitor.New(&snapshotProvider{
 		servers:  serverSvc,

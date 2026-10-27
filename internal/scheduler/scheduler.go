@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Rewind2026/wgpanel/internal/config"
+	"github.com/Rewind2026/wgpanel/internal/netdriver"
 	"github.com/Rewind2026/wgpanel/internal/service"
 	"github.com/Rewind2026/wgpanel/internal/store"
 )
@@ -31,9 +32,7 @@ func New(cfg config.Config, st *store.Store, log *slog.Logger) *Scheduler {
 // Start 运行调度循环，直到 ctx 取消。
 func (s *Scheduler) Start(ctx context.Context) {
 	hourly := time.NewTicker(time.Hour)
-	daily := time.NewTicker(24 * time.Hour)
 	defer hourly.Stop()
-	defer daily.Stop()
 
 	// 启动 1 分钟后执行一次初始降采样，保证 10m 桶不空。
 	initial := time.NewTimer(time.Minute)
@@ -45,11 +44,11 @@ func (s *Scheduler) Start(ctx context.Context) {
 			return
 		case <-initial.C:
 			s.runRollup(ctx)
+			s.runDailyRollup(ctx)
 		case <-hourly.C:
 			s.runRollup(ctx)
-			s.runCleanup(ctx)
-		case <-daily.C:
 			s.runDailyRollup(ctx)
+			s.runCleanup(ctx)
 		}
 	}
 }
@@ -67,6 +66,14 @@ func (s *Scheduler) runRollup(ctx context.Context) {
 }
 
 // runDailyRollup 聚合到 day 桶。
+//
+// 与 10m/hour 桶不同，day 桶原本挂在 24 小时的 ticker 上，
+// 意味着新部署后的头 24 小时内 day 桶必然为空——
+// 界面上「最近 30 天」会返回空数组，而不是一条短曲线。
+//
+// 降采样本身是幂等的（ON CONFLICT DO UPDATE 取更大的累计值），
+// 重复执行不会污染数据，因此这里跟着 10m/hour 一起跑，
+// 让 day 桶在启动一分钟后就有内容。
 func (s *Scheduler) runDailyRollup(ctx context.Context) {
 	if err := s.store.TrafficRepo().Rollup(ctx, "day", time.Now().Add(-730*24*time.Hour).Unix(), 86400); err != nil {
 		s.log.Error("rollup day failed", "error", err)
@@ -117,7 +124,17 @@ func (s *Scheduler) runCleanup(ctx context.Context) {
 
 // DetectPublicEndpoint 推断服务端公网地址。
 //
-// 优先级：环境变量 > 面板设置里的显式覆盖 > 服务端监听地址 > 容器出口 IP。
+// 优先级分两档：
+//
+//	bridge：环境变量 > 面板设置 > 服务端监听地址 > 容器出口 IP
+//	host / ipvlan / macvlan：
+//	     环境变量 > 面板设置 > 上行接口 IPv4 > 上行接口全局 IPv6 > 监听地址 > 出口 IP
+//
+// L2/host 模式多出的两档是模式可达性的直接结果：这些部署里上行接口
+// （macvlan/ipvlan 容器的 eth0、host 模式的物理网卡）持有局域网真实地址，
+// 其中 IPv6 由上游路由器 RA/SLAAC 下发的全局地址（GUA）可被外部设备直连。
+// bridge 模式没有这一档——eth0 是 172.17.x.x 之类的 NAT 内网地址，
+// 客户端根本路由不到，把它们写进配置只会制造「配置正常但连不上」的假象。
 //
 // 服务端监听地址这一级有两个坑：
 //   - ListenIPv4 是 wg 接口的隧道地址（如 10.8.0.1），客户端根本路由不到它，
@@ -131,7 +148,7 @@ func (s *Scheduler) runCleanup(ctx context.Context) {
 //
 // 最后一级（容器出口 IP）在 NAT/多网卡/端口映射下未必是客户端可达地址，
 // 因此调用方必须把它当提示展示，不允许静默写回配置。
-func DetectPublicEndpoint(ctx context.Context, svc *service.ServerService, settings *store.SettingRepo) string {
+func DetectPublicEndpoint(ctx context.Context, mode netdriver.Mode, svc *service.ServerService, settings *store.SettingRepo) string {
 	if v := strings.TrimSpace(os.Getenv("WGP_PUBLIC_ENDPOINT")); v != "" {
 		return v
 	}
@@ -144,6 +161,23 @@ func DetectPublicEndpoint(ctx context.Context, svc *service.ServerService, setti
 			}
 		}
 	}
+	// L2/host 模式：上行接口的地址就是本机在链路层的真实地址，
+	// 局域网客户端走 IPv4、外部设备走 RA 下发的 GUA，都比隧道地址更可达。
+	if mode != netdriver.ModeBridge {
+		iface, v4, v6 := netdriver.UplinkAddresses()
+		if iface != "" {
+			for _, a := range v4 {
+				if v := normalizeLANEndpoint(a); v != "" {
+					return v
+				}
+			}
+			for _, a := range v6 {
+				if v := normalizeEndpoint(a); v != "" {
+					return v
+				}
+			}
+		}
+	}
 	if cfg, err := svc.Get(ctx); err == nil {
 		if v := normalizeEndpoint(cfg.ListenIPv4); v != "" {
 			return v
@@ -153,6 +187,28 @@ func DetectPublicEndpoint(ctx context.Context, svc *service.ServerService, setti
 		}
 	}
 	return outboundIP(ctx)
+}
+
+// normalizeLANEndpoint 规整上行接口的 IPv4 候选地址。
+// 与 normalizeEndpoint 的差别在于放行 RFC1918 私网：L2/host 部署里
+// 上行地址就是客户端可达的真实地址（局域网场景），不能用公网性一票否决；
+// 但回环、链路本地、带掩码、带 zone 的值依然不可用。
+func normalizeLANEndpoint(addr string) string {
+	v := strings.TrimSpace(addr)
+	if v == "" {
+		return ""
+	}
+	if strings.Contains(v, "/") {
+		return ""
+	}
+	if i := strings.IndexByte(v, '%'); i >= 0 {
+		return ""
+	}
+	ip := net.ParseIP(v)
+	if ip == nil || ip.To4() == nil || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
+		return ""
+	}
+	return v
 }
 
 // normalizeEndpoint 把监听地址规整成可写入 Endpoint 的形式，
