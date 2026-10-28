@@ -4,34 +4,38 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [0.10.0] - 2026-10-27
+## [未发布]
+
+## [0.10.0] - 2026-10-28
+
+### 变更
+
+- **网络部署模式重构**：Docker 部署支持 `host` / `ipvlan` / `macvlan` 三种模式，
+  每模式一份完整独立的 compose 文件（模式硬编码 `WGP_NATIVE_MODE`，不接受 .env 覆盖），
+  `scripts/up.sh` 统一入口并做 L2 前置校验（必填参数、宿主地址冲突、ipvlan parent 独占）。
+  L2 模式 IPv6 采用 Docker 官方「router-assigned IPv6 addresses」配方——网络不带 v6 子网，
+  端点 sysctls 打开 `disable_ipv6=0` / `accept_ra=2`，容器内再注入
+  `net.ipv6.conf.all.forwarding=1`，eth0 直接从上游路由器 RA/SLAAC 拿全局地址（GUA），
+  外部设备可直连 WireGuard，家宽前缀轮换自动跟随。面板新增「系统运维 → 网络」诊断卡
+  （模式、各接口地址、RA 三开关状态与自愈、实时 Endpoint），侧栏显示当前网络模式。
+  K8s 与 systemd 形态改用 `managed`（自管 netns 转发/NAT）表述，行为不变。
+  compose 数据卷补显式 `name: wgpanel-data`，目录改名不再静默新建空卷「丢」数据。
+- **RA 诊断口径随模式收敛**。`netdriver.InspectRA` / `EnsureRA` 改为接收部署模式参数，
+  `RAStatus` 新增 `applicable` 字段：只有 L2 模式（ipvlan/macvlan）的 RA 链路归面板管，
+  `host` 与 `managed` 的 RA 策略归宿主网络栈或 CNI，面板不越界读写，
+  界面按「不适用」展示而不是把宿主策略误报成可修复故障。
+
+### 移除
+
+- **bridge 部署模式**。docker bridge 是独立链路，上游路由器的 RA（链路本地组播）
+  到不了容器，SLAAC 拿不到全局地址；发布宿主 IPv6 端口只能经 DNAT 解决入站握手，
+  隧道内客户端访问 IPv6 互联网（出站数据面）无解。`WGP_NATIVE_MODE=bridge` 现在
+  启动即报错并提示迁移方向；`docker-compose.yml`（bridge 版）已删除；
+  `install.sh` 与文档中的 `docker run` 示例改为 `--network host`。
+  原「容器内自管转发/NAT」能力以 `managed` 形态保留给 K8s / systemd，见 ARCHITECTURE ADR-8。
 
 ### 新增
 
-- **四种网络部署模式**：`bridge` / `host` / `ipvlan` / `macvlan`，每种模式对应一份
-  完整独立的 compose 文件（`docker-compose{,.host,.ipvlan,.macvlan}.yml`），互不叠加。
-  `WGP_NATIVE_MODE` 告知面板当前形态，影响 Endpoint 探测与能力判定。
-  L2 模式（ipvlan/macvlan）容器直挂物理二层，IPv4 从宿主网段分配、无需端口映射；
-  **IPv6 不配置 v6 子网**，以端点级 `com.docker.network.endpoint.sysctls` 打开
-  `disable_ipv6=0` 与 `accept_ra=2`，容器内再注入 `all.forwarding=1` 等 netns 级开关，
-  组合出 **RA/SLAAC 路由器下发**：容器 eth0 直接从上游路由器拿全局地址（GUA），
-  外部设备可直连 WireGuard，家宽前缀轮换后内核自动跟随。endpoint sysctls 需要
-  Docker ≥ 27 / Compose ≥ v2.27.1。
-- **一键启动脚本 `scripts/up.sh`**：按 `WGP_NETWORK_MODE` 自动选择 compose 文件，
-  L2 模式前置校验必填参数、CIDR 合法性、网关属于子网、ipvlan parent 独占、
-  固定 IPv4 与宿主已用地址冲突（撞地址会抢 ARP 致宿主失联）。
-- **`GET /api/v1/system/network`**：返回部署模式、全部接口地址、上行接口、
-  当前探测 Endpoint 与 IPv6 RA 链路诊断（`disable_ipv6` / `accept_ra` / `forwarding`
-  三颗内核开关；sysctl 可写时自动自愈，只读时给出 compose 修复提示）。
-- **系统运维页「网络」卡**：展示模式徽章、上行接口与全局 v6、RA 链路三开关状态、
-  全部接口地址明细，15s 轮询；侧栏同步显示当前网络模式。
-- **Endpoint 探测模式感知**：非 bridge 模式下在上行接口上探测候选地址——
-  IPv4 放行 RFC1918（局域网直连场景），IPv6 只接受全局地址；
-  bridge 保持原有探测优先级（面板设置 > 容器出口 IP）。
-- **全局唯一监控流**：监控 SSE 连接从「每页面各自建立」改为 `MetricsProvider`
-  全局持有一条，切菜单不再销毁重建（省去重复换票请求，控制台不再出现
-  `net::ERR_ABORTED` 红色报错）；`useMetricsStream` 退化为纯订阅。
-  另附 `e2e/ui/sse_measure.mjs` 测量连接行为。
 - **站点图标**。之前面板没有 favicon，浏览器标签页只显示一个默认的地球图标，
   和 2077 风格的面板摆在一起很突兀。现在补齐整套图标资产：
   `web/public/favicon.svg` 作为主源（矢量，1.1 KB），图形与界面左上角的 Logo 同源——
@@ -47,13 +51,6 @@
   `Content-Type` 是 `application/manifest+json`，不匹配就**静默丢弃**——
   页面不报错、控制台无警告，只是 PWA 安装入口消失。
   `mountWebUI` 现在对该扩展名显式指定类型，且不依赖系统 `mime.types`（容器里未必存在）。
-- **路由切换后显示上一页的错误卡片**。`ErrorBoundary` 实例在同类路由元素间被 React
-  复用，上一个页面抛出的 error 留在 state 里，新路由直接渲染旧错误。现在以
-  路由路径为 key 强制重建错误边界。
-- **bridge compose 的数据卷缺显式 `name:`**，目录名变化或换 compose 文件时
-  会静默新建空卷，看起来像数据「丢失」。四份 compose 统一固定为 `wgpanel-data`；
-  同时镜像标签改为 `WGP_IMAGE` 变量（默认仍是 `ghcr.io/rewind2026/wgpanel:latest`），
-  自建镜像不再需要手改 compose。
 
 ## [0.9.0] - 2026-10-23
 
@@ -459,5 +456,6 @@ M0-M6 已交付，M7 真机验证在本轮收尾，199 项回归全绿。
 - M3 实时监控：SSE 推送、指标采集、流量按 `peer_id` 归因、逐级降采样。
 - M4 加固：RBAC 四角色、审计日志、登录限流、健康探针、代理信任、CSP。
 
-[未发布]: https://github.com/Rewind2026/wgpanel/compare/v0.9.0...HEAD
+[未发布]: https://github.com/Rewind2026/wgpanel/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/Rewind2026/wgpanel/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/Rewind2026/wgpanel/compare/v0.1.0...v0.9.0

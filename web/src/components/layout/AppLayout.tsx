@@ -49,10 +49,10 @@ const NAV_ITEMS: NavItem[] = [
 
 /** 部署网络模式的中文标签，与后端 netdriver.Mode 一一对应。 */
 const NET_MODE_LABELS: Record<string, string> = {
-  bridge: '桥接网络模式',
   host: 'Host 网络模式',
   ipvlan: 'IPvlan 网络模式',
   macvlan: 'Macvlan 网络模式',
+  managed: '自管网络模式',
 }
 
 export function AppLayout() {

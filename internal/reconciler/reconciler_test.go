@@ -756,24 +756,24 @@ func TestMissingAddressesIgnoresExtras(t *testing.T) {
 	}
 }
 
-// TestBridgeModeOwnsHostNetworking 是 bridge 模式的默认行为：
-// 容器有独立 netns，转发、路由、NAT 都必须由面板下发。
-func TestBridgeModeOwnsHostNetworking(t *testing.T) {
+// TestManagedModeOwnsNetnsNetworking 是自管（managed）形态的默认行为：
+// 进程有独立 netns，转发、路由、NAT 都必须由面板下发。
+func TestManagedModeOwnsNetnsNetworking(t *testing.T) {
 	cfg := defaultConfig()
 	n := healthyNet()
 	d := &fakeDriver{state: deviceState(t, cfg, nil)}
 	r := New(d, n, fakeSource{cfg: cfg}, time.Hour, testLogger(),
-		WithNetworkMode(netdriver.ModeBridge))
+		WithNetworkMode(netdriver.ModeManaged))
 
 	if err := r.Reconcile(context.Background()); err != nil {
 		t.Fatalf("Reconcile: %v", err)
 	}
 	if n.fwdCalls != 1 || n.routeCalls != 1 || n.natCalls != 1 {
-		t.Errorf("bridge 模式应下发转发/路由/NAT，得到 fwd=%d route=%d nat=%d",
+		t.Errorf("自管模式应下发转发/路由/NAT，得到 fwd=%d route=%d nat=%d",
 			n.fwdCalls, n.routeCalls, n.natCalls)
 	}
 	if r.LastNetworkError() != nil {
-		t.Errorf("bridge 模式正常时不应有网络错误，得到 %v", r.LastNetworkError())
+		t.Errorf("自管模式正常时不应有网络错误，得到 %v", r.LastNetworkError())
 	}
 }
 

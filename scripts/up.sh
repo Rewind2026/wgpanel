@@ -1,19 +1,22 @@
 #!/usr/bin/env bash
 # up.sh —— 按网络模式启动 wgpanel
 #
-# 四种模式 = 四份完整独立的 compose 文件（互不叠加，任何 Compose 版本可用）：
-#   bridge   docker-compose.yml            默认（`docker compose up -d` 零改动）
-#   host     docker-compose.host.yml
-#   ipvlan   docker-compose.ipvlan.yml
-#   macvlan  docker-compose.macvlan.yml
+# 三种模式 = 三份完整独立的 compose 文件（互不叠加，任何 Compose 版本可用）：
+#   host     docker-compose.host.yml      默认（共享宿主网络栈，零参数即可用）
+#   ipvlan   docker-compose.ipvlan.yml    L2 直挂（IPv6 走 RA/SLAAC）
+#   macvlan  docker-compose.macvlan.yml   L2 直挂（IPv6 走 RA/SLAAC）
+#
+# 原 bridge 部署模式已移除：docker bridge 是独立链路，上游路由器的 RA
+# （链路本地组播）到不了容器，SLAAC 拿不到全局地址；发布宿主 v6 端口只能
+# 经 DNAT 解决入站握手，隧道内客户端访问 IPv6 互联网（出站数据面）无解。
 #
 # 用法：
-#   ./scripts/up.sh                                  # bridge（默认）
+#   ./scripts/up.sh                                  # host（默认）
 #   WGP_NETWORK_MODE=macvlan ./scripts/up.sh         # macvlan
 #   WGP_NETWORK_MODE=ipvlan  ./scripts/up.sh         # ipvlan
 #   WGP_NETWORK_MODE=host    ./scripts/up.sh         # host
 #
-# 模式来源优先级：shell 环境变量 > .env 的 WGP_NETWORK_MODE > bridge。
+# 模式来源优先级：shell 环境变量 > .env 的 WGP_NETWORK_MODE > host。
 # L2（ipvlan/macvlan）参数（WGP_L2_PARENT/SUBNET/GATEWAY/IPV4）同样支持
 # shell 环境变量与 .env；两处都没写时，compose 文件顶部的 x-l2-* 三行兜底。
 #
@@ -42,7 +45,7 @@ die()  { echo -e "${RED}[up.sh] ✗ ${*}${NC}" >&2; exit 1; }
 for arg in "$@"; do
   case "$arg" in
     -h|--help)
-      sed -n '2,22p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      sed -n '2,/^set -euo/p' "${BASH_SOURCE[0]}" | sed '$d; s/^# \{0,1\}//'
       exit 0 ;;
     *)
       die "未知参数：$arg（多余参数请直接用 docker compose 传递）"
@@ -60,8 +63,8 @@ env_get() {
 }
 
 [ -n "${WGP_NETWORK_MODE:-}" ] || WGP_NETWORK_MODE="$(env_get WGP_NETWORK_MODE)"
-NETWORK_MODE="$(echo "${WGP_NETWORK_MODE:-bridge}" | tr '[:upper:]' '[:lower:]' | xargs)"
-[ -n "$NETWORK_MODE" ] || NETWORK_MODE="bridge"
+NETWORK_MODE="$(echo "${WGP_NETWORK_MODE:-host}" | tr '[:upper:]' '[:lower:]' | xargs)"
+[ -n "$NETWORK_MODE" ] || NETWORK_MODE="host"
 
 # L2 变量：读到就 export，让 compose 的 ${...} 插值与本脚本取值一致。
 for _k in WGP_L2_PARENT WGP_L2_SUBNET WGP_L2_GATEWAY WGP_L2_IPV4 \
@@ -73,11 +76,11 @@ for _k in WGP_L2_PARENT WGP_L2_SUBNET WGP_L2_GATEWAY WGP_L2_IPV4 \
 done
 
 case "$NETWORK_MODE" in
-  bridge)  COMPOSE_FILE="docker-compose.yml" ;;
   host)    COMPOSE_FILE="docker-compose.host.yml" ;;
   ipvlan)  COMPOSE_FILE="docker-compose.ipvlan.yml" ;;
   macvlan) COMPOSE_FILE="docker-compose.macvlan.yml" ;;
-  *) die "WGP_NETWORK_MODE=${NETWORK_MODE} 不合法：仅支持 bridge | host | ipvlan | macvlan" ;;
+  bridge)  die "bridge 部署模式已移除：docker bridge 网络拿不到路由器 RA，容器 IPv6 无法直连。请改用 host（零参数）或 ipvlan / macvlan（L2 直挂，IPv6 走 RA/SLAAC）" ;;
+  *) die "WGP_NETWORK_MODE=${NETWORK_MODE} 不合法：仅支持 host | ipvlan | macvlan" ;;
 esac
 [ -f "$COMPOSE_FILE" ] || die "$COMPOSE_FILE 不存在（请确认在项目根目录执行）"
 

@@ -1,6 +1,6 @@
 # WGPanel
 
-> 生产可用级 WireGuard VPN Docker 部署方案 —— 现代化 Web 管理 UI、全参数可视化配置、实时监控、单命令一键部署、原生兼容 Docker bridge 网络。
+> 生产可用级 WireGuard VPN Docker 部署方案 —— 现代化 Web 管理 UI、全参数可视化配置、实时监控、单命令一键部署、host / ipvlan / macvlan 三种网络模式（L2 直挂支持 IPv6 路由器下发）。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -19,7 +19,7 @@ WGPanel 是一个单镜像、单卷、单命令即可跑起来的 WireGuard 管�
 | 实时事件 | SSE 推送上下线、超限、到期、备份等事件到界面，无需外部通知服务 |
 | 备份恢复 | 逻辑快照 AES-256-GCM 加密为单个 `.wgbak`，支持定时备份、一键恢复 |
 | 一键部署 | `docker run` 一条命令，无需数据库、无需监控栈、无需预装 wireguard-tools |
-| bridge 原生 | 容器内独立 netns 完成路由与 NAT，不需要 `--network host` |
+| 三种网络模式 | host 共享宿主栈；ipvlan / macvlan 直挂物理二层，IPv6 由路由器 RA/SLAAC 下发、外部设备可直连 |
 | 声明式调谐 | 数据库是期望态，内核状态漂移（外部 `wg set` 改动、容器异常退出）自动修复 |
 | 单账号 + 审计 | 单账号部署（自助改密），所有写操作进审计日志并可导出 CSV |
 
@@ -38,11 +38,12 @@ curl -fsSL https://raw.githubusercontent.com/Rewind2026/wgpanel/main/install.sh 
 ```bash
 docker run -d --name wgpanel \
   --restart unless-stopped \
+  --network host \
   --cap-drop ALL --cap-add NET_ADMIN \
   --device /dev/net/tun \
-  --sysctl net.ipv4.ip_forward=1 \
-  --sysctl net.ipv4.conf.all.src_valid_mark=1 \
-  -p 51820:51820/udp -p 8080:8080/tcp \
+  -e WGP_NATIVE_MODE=host \
+  -e WGP_LISTEN_ADDR=0.0.0.0:8080 \
+  -e WGP_LISTEN_PORT=51820 \
   -v wgpanel-data:/data \
   -e WGP_ADMIN_PASSWORD='换成你的强密码' \
   ghcr.io/rewind2026/wgpanel:latest
@@ -50,12 +51,15 @@ docker run -d --name wgpanel \
 
 > 宿主内核**尚未**加载 `wireguard` 模块时，面板会拒绝就绪并在日志中提示 `modprobe wireguard`。
 > 不默认授予 `SYS_MODULE`：该权限等价于宿主 root，能加载任意内核模块。确有需要时由你在宿主侧加载模块。
+> host 模式下面板**不接管**宿主转发与 NAT，需自行执行：
+> `sysctl -w net.ipv4.ip_forward=1` 与
+> `iptables -t nat -A POSTROUTING -s 10.8.0.0/24 ! -o wg0 -j MASQUERADE`；
+> 或改用 compose 的 L2 模式（面板在容器内自管转发与 NAT，见「网络部署模式」）。
 
 ### 方式三：docker compose
 
 ```bash
-cp .env.example .env    # 按需修改，默认值即可运行
-docker compose up -d
+./scripts/up.sh    # 默认 host；L2 模式示例见「网络部署模式」
 ```
 
 打开 `http://<服务器IP>:8080`，用 `admin` + 你设置的密码登录。
@@ -73,14 +77,20 @@ docker compose up -d
 
 ## 网络部署模式
 
-四种模式各对应一份**完整独立**的 compose 文件，互不叠加，任何 Compose 版本可用：
+三种模式各对应一份**完整独立**的 compose 文件，互不叠加，任何 Compose 版本可用：
 
 | 模式 | compose 文件 | 特点 | IPv6 |
 |---|---|---|---|
-| `bridge`（默认） | `docker-compose.yml` | 容器独立 netns，端口经 docker 发布 | 经 docker 网络 |
-| `host` | `docker-compose.host.yml` | 共享宿主网络栈，源地址真实 | 随宿主 |
+| `host`（默认） | `docker-compose.host.yml` | 共享宿主网络栈，源地址真实 | 随宿主 |
 | `ipvlan` | `docker-compose.ipvlan.yml` | 容器直挂二层、与父接口共享 MAC | **RA/SLAAC 路由器下发** |
 | `macvlan` | `docker-compose.macvlan.yml` | 容器直挂二层、独占 MAC | **RA/SLAAC 路由器下发** |
+
+> K8s Pod 与 systemd 裸机部署使用 `managed`（自管）形态：面板在进程自己的
+> netns 内完成转发、路由与 NAT，无 compose 文件，见 [`deploy/`](deploy/README.md)。
+> 原 `bridge` 部署模式已移除：docker bridge 是独立链路，上游路由器的 RA
+> （链路本地组播）到不了容器，SLAAC 拿不到全局地址——发布宿主 v6 端口只能
+> 经 DNAT 解决入站握手，隧道内客户端访问 IPv6 互联网（出站数据面）无解。
+> `WGP_NATIVE_MODE=bridge` 启动时会明确报错并提示迁移。
 
 L2 模式（ipvlan/macvlan）启动：
 
@@ -96,7 +106,7 @@ docker compose -f docker-compose.macvlan.yml up -d
 
 要点：
 
-- 镜像默认取 `ghcr.io/rewind2026/wgpanel:latest`，四份 compose 均可用 `WGP_IMAGE=本地标签 ./scripts/up.sh` 换成自建镜像。
+- 镜像默认取 `ghcr.io/rewind2026/wgpanel:latest`，三份 compose 均可用 `WGP_IMAGE=本地标签 ./scripts/up.sh` 换成自建镜像。
 - 容器 IPv4 从宿主网段分配（`WGP_L2_IPV4` 可固定，留空自动分配），面板 `http://<容器IP>:8080`、WireGuard `<容器IP>:51820/udp`，无需端口映射；容器与宿主相互隔离（macvlan 内核限制），需从局域网其他设备访问面板。
 - **IPv6 不配置 v6 子网**：网络不带 v6 段，端点上以 `com.docker.network.endpoint.sysctls` 打开 `disable_ipv6=0` 与 `accept_ra=2`，容器内再注入 `net.ipv6.conf.all.forwarding=1` 等 netns 级 sysctl——组合效果是 eth0 直接从上游路由器 RA 拿全局地址（GUA），外部设备可直连 WireGuard；家宽前缀轮换后内核自动跟随，配置永不作废。
 - ipvlan 的 parent 独占（同网卡仅一条 ipvlan 网络）；macvlan 需要网络允许同端口多 MAC（WiFi 与部分云环境不行，此时选 ipvlan）。
@@ -139,7 +149,7 @@ cd web && npm run dev           # 终端 2
 | `WGP_LISTEN_PORT` | `51820` | WireGuard UDP 端口。**仅首次初始化生效**，之后请在服务端设置页修改 |
 | `WGP_ADDRESS_CIDR` | `10.8.0.1/24` | 隧道网段。**仅首次初始化生效**；修改后已分配的客户端地址不会自动迁移 |
 | `WGP_MTU` | `1420` | 接口 MTU。**仅首次初始化生效**；容器网络下建议 ≤ 宿主 MTU − 80 |
-| `WGP_NATIVE_MODE` | `bridge` | 部署网络模式：`bridge` / `host` / `ipvlan` / `macvlan`，见「网络部署模式」。L2 模式还需 `WGP_L2_PARENT` / `WGP_L2_SUBNET` / `WGP_L2_GATEWAY`（可选 `WGP_L2_IPV4` / `WGP_L2_NETWORK_NAME`） |
+| `WGP_NATIVE_MODE` | `managed` | 部署网络形态：`host` / `ipvlan` / `macvlan` / `managed`。Docker 场景由各 compose 文件硬编码，此变量主要用于 K8s / systemd；见「网络部署模式」。L2 模式还需 `WGP_L2_PARENT` / `WGP_L2_SUBNET` / `WGP_L2_GATEWAY`（可选 `WGP_L2_IPV4` / `WGP_L2_NETWORK_NAME`） |
 | `WGP_SAMPLE_INTERVAL` | `1s` | 监控采样间隔（200ms ~ 10s） |
 | `WGP_RECONCILE_INTERVAL` | `2s` | 期望态与内核状态的一致性检查周期 |
 | `WGP_TRUSTED_PROXY` | 空 | 可信反向代理网段。**不要填 `0.0.0.0/0`**，否则任何人可伪造来源 IP 绕过登录限流 |

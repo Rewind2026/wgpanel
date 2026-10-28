@@ -1,22 +1,25 @@
 # docker-compose.host.yml —— host 网络模式
 #
-# 四个模式各对应一份**完整独立**的 compose 文件，互不叠加：
-#   docker-compose.yml            bridge（默认，`docker compose up -d` 零改动）
-#   docker-compose.host.yml       host ← 本文件
+# 三个模式各对应一份**完整独立**的 compose 文件，互不叠加：
+#   docker-compose.host.yml       host ← 本文件（零参数即可用）
 #   docker-compose.ipvlan.yml     ipvlan（IPv6 走 RA/SLAAC）
 #   docker-compose.macvlan.yml    macvlan（IPv6 走 RA/SLAAC）
 #
+# 原 bridge 部署模式已移除：docker bridge 网络拿不到路由器 RA/SLAAC，
+# 容器 IPv6 无法直连（端口发布只能解决入站，解决不了出站数据面）。
+#
 # 启动：docker compose -f docker-compose.host.yml up -d
-#   或：WGP_NETWORK_MODE=host ./scripts/up.sh
+#   或：./scripts/up.sh（默认模式即 host）
 #
 # host 模式：容器与宿主共享网络栈。面板监听宿主 8080/udp 51820，
-# 入站源地址保留真实 IP（bridge 模式下经 NAT 会变成网关地址）。
+# 入站源地址保留真实 IP。
 #
-# ⚠️ 与 bridge 文件的两处硬性差异：
+# ⚠️ 与 L2 文件的两处硬性差异：
 #   1. 不能有 ports 映射——host 网络下没有端口转换这一层，写了会被 daemon 拒绝；
 #   2. 不能有 sysctls 段——/proc/sys 与宿主共享，runc 以
 #      "not allowed in host network namespace" 拒绝创建。
-#      转发开关归属宿主（sysctl -w net.ipv4.ip_forward=1），面板只读不写。
+#      转发开关归属宿主（sysctl -w net.ipv4.ip_forward=1），面板只读不写；
+#      隧道网段的 NAT（MASQUERADE）同样需宿主自行配置。
 
 services:
   wgpanel:
@@ -50,7 +53,7 @@ services:
       WGP_DNS: 1.1.1.1,8.8.8.8
       # 模式由**文件**决定，不接受 .env 覆盖：
       # 网络由文件决定，变量必须服从文件，否则会出现「容器在 host netns 里、
-      # 面板却按 bridge 分支跑」的错位（转发开关/NAT 语义全部错乱）。
+      # 面板却按自管分支跑」的错位（转发开关/NAT 语义全部错乱）。
       WGP_NATIVE_MODE: host
       WGP_SAMPLE_INTERVAL: 1s
       WGP_LOG_LEVEL: info

@@ -31,7 +31,7 @@ export interface Me {
   role: Role
   viaApi: boolean
   permissions: Permission[]
-  /** 部署网络形态：bridge | host | ipvlan | macvlan，与后端 netdriver.Mode 对应。 */
+  /** 部署网络形态：host | ipvlan | macvlan | managed（自管），与后端 netdriver.Mode 对应。 */
   netMode?: string
 }
 
@@ -192,6 +192,8 @@ export interface RAStatus {
   acceptRA: number
   forwarding: number
   writable: boolean
+  /** false 表示当前模式下 RA 链路不归面板管（host/managed 归宿主网络栈）。 */
+  applicable: boolean
   globalV6: string[]
   problems?: string[]
   applied?: string[]

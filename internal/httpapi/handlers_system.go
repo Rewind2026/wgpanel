@@ -20,16 +20,13 @@ import (
 // disable_ipv6 / accept_ra / forwarding 三颗内核开关缺一不可；
 // 容器内 sysctl 可写时顺带自愈前两颗，只读（compose 未注入且 /proc/sys ro）
 // 时原样报告问题，让界面给出「去改 compose」而不是无解的报错。
-// bridge/host 模式只读检查，不产生副作用。
+// host / managed（自管）模式的 RA 链路归宿主网络栈，EnsureRA 内部
+// 只读返回（Applicable=false），不产生副作用。
 func (s *Server) handleSystemNetwork(w http.ResponseWriter, r *http.Request) {
 	mode := s.netMode
 	uplink := netdriver.DefaultUplink()
-	var ra netdriver.RAStatus
-	if mode.IsL2() {
-		ra = netdriver.EnsureRA(uplink)
-	} else {
-		ra = netdriver.InspectRA(uplink)
-	}
+	// EnsureRA 按 mode 分流：L2 自愈前两颗开关，host/managed 只读检查。
+	ra := netdriver.EnsureRA(mode, uplink)
 	respondJSON(w, http.StatusOK, map[string]any{
 		"mode":       string(mode),
 		"uplink":     uplink,

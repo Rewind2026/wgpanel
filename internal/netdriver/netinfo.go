@@ -10,6 +10,23 @@
 // 任何一颗不对，eth0 就拿不到全局 IPv6 地址，外部设备无法直连 WireGuard。
 // 这里把三颗开关的实际取值、可写性与地址结果一次性读出来，
 // 供 /api/system/network 诊断展示；EnsureRA 额外尝试自愈前两颗。
+//
+// ⚠️ 只有 L2 模式（ipvlan/macvlan）才有「RA 链路归本进程管」这回事。
+// host 与 managed（自管：systemd 裸机 / K8s Pod）的网络栈归属完全不同，
+// 把它们按同一标准判故障会得到误导性结论：
+//
+//	host    —— 容器与宿主共享网络栈，RA 策略（accept_ra、disable_ipv6）
+//	           是宿主的全局设置，由 NetworkManager/systemd-networkd 决定。
+//	           面板改它等于改宿主策略，即便容器内有权限也不该越界。
+//	managed —— 进程在自己的 netns 里自管转发/NAT，RA 策略同样归属宿主
+//	           网络栈或 K8s CNI，面板不越界接管。
+//
+// 原 bridge 部署模式已移除：Docker 对无 v6 子网的网桥端点一律置
+// disable_ipv6=1，RA 根本到不了容器，IPv6 无法直连，诊断与自愈在那种
+// 形态下均无意义（详见 ADR-8）。
+//
+// 因此 RAStatus 增加了 Applicable 字段：false 表示该模式下 RA 链路
+// 不归本进程负责，Problems 为空，前端按「不适用」展示而不是报故障。
 
 package netdriver
 
@@ -31,14 +48,14 @@ const (
 
 // IPv6 地址 flag 位（/proc/net/if_inet6 第五列，IF_INET6 内核文档定义）。
 const (
-	flagTemporary      = 0x01
-	flagTentative      = 0x02
-	flagDeprecated     = 0x04
-	flagTentativeOpt   = 0x08
-	flagDADFailed      = 0x10
-	flagHomeAddress    = 0x20
-	flagOptimistic     = 0x40
-	flagPermanent      = 0x80
+	flagTemporary    = 0x01
+	flagTentative    = 0x02
+	flagDeprecated   = 0x04
+	flagTentativeOpt = 0x08
+	flagDADFailed    = 0x10
+	flagHomeAddress  = 0x20
+	flagOptimistic   = 0x40
+	flagPermanent    = 0x80
 	// v6GlobalExclude 汇总「不能当对外 Endpoint」的 flag 组合：
 	// DAD 尚未通过、已弃用或乐观重复地址检测中的地址都不可靠。
 	// PERMANENT/TEMPORARY/HOMEADDRESS 是正常可用状态，予以保留。
@@ -56,14 +73,18 @@ type InterfaceInfo struct {
 // RAStatus 是一个接口的 IPv6 RA/SLAAC 链路状态。
 // 数值取不到时为 -1（接口不存在或 /proc 不可读）。
 type RAStatus struct {
-	Interface   string   `json:"interface"`
-	DisableIPv6 int      `json:"disableIPv6"`
-	AcceptRA    int      `json:"acceptRA"`
-	Forwarding  int      `json:"forwarding"`
+	Interface   string `json:"interface"`
+	DisableIPv6 int    `json:"disableIPv6"`
+	AcceptRA    int    `json:"acceptRA"`
+	Forwarding  int    `json:"forwarding"`
 	// Writable 表示 sysctl 是否可写。容器内 /proc/sys 常被只读挂载，
 	// 此时取值正确但无法自愈，必须把两种状态区分开。
-	Writable bool     `json:"writable"`
-	GlobalV6 []string `json:"globalV6"`
+	Writable bool `json:"writable"`
+	// Applicable 表示该模式下 RA 链路是否归本进程负责。
+	// false 时 Problems 恒为空：host/managed 的 RA 策略归宿主网络栈，
+	// 面板不该越界接管。
+	Applicable bool     `json:"applicable"`
+	GlobalV6   []string `json:"globalV6"`
 	// Problems 列出阻断 SLAAC 的配置问题（人类可读）。
 	Problems []string `json:"problems,omitempty"`
 	// Applied 列出本次自愈成功写入的项（EnsureRA 专用）。
@@ -74,10 +95,10 @@ type RAStatus struct {
 func EnumerateInterfaces() []InterfaceInfo {
 	ifaces, err := net.Interfaces()
 	if err != nil {
-		return nil
+		return []InterfaceInfo{}
 	}
 	exclude := map[string]bool{"lo": true}
-	var out []InterfaceInfo
+	out := []InterfaceInfo{}
 	for _, ifc := range ifaces {
 		if exclude[ifc.Name] {
 			continue
@@ -86,7 +107,14 @@ func EnumerateInterfaces() []InterfaceInfo {
 		if err != nil {
 			continue
 		}
-		info := InterfaceInfo{Name: ifc.Name}
+		// 三个地址切片预置为空而非 nil：nil 会被 JSON 编码成 null，
+		// 前端拿到 null 再取 .length 会直接抛错，整张网络卡渲染失败。
+		info := InterfaceInfo{
+			Name:     ifc.Name,
+			Addrs:    []string{},
+			V4:       []string{},
+			V6Global: []string{},
+		}
 		for _, a := range addrs {
 			ipn, ok := a.(*net.IPNet)
 			if !ok {
@@ -130,18 +158,20 @@ func DefaultUplink() string {
 
 // UplinkAddresses 返回默认路由接口上的候选 Endpoint 地址：
 // v4 为该接口全部 IPv4（去掩码），v6 为全部全局 IPv6（去掩码、剔除 DAD 未通过等不可靠地址）。
+// 三个返回值都非 nil：nil 切片在 JSON 里会变成 null。
 func UplinkAddresses() (iface string, v4 []string, v6 []string) {
+	v4, v6 = []string{}, []string{}
 	iface = DefaultUplink()
 	if iface == "" {
-		return "", nil, nil
+		return "", v4, v6
 	}
 	ifc, err := net.InterfaceByName(iface)
 	if err != nil {
-		return iface, nil, nil
+		return iface, v4, v6
 	}
 	addrs, err := ifc.Addrs()
 	if err != nil {
-		return iface, nil, nil
+		return iface, v4, v6
 	}
 	// /proc/net/if_inet6 的 flag 信息按 (接口, 十六进制地址) 索引，
 	// net.Interface.Addrs 拿不到这些 flag，必须合表比对。
@@ -167,26 +197,60 @@ func UplinkAddresses() (iface string, v4 []string, v6 []string) {
 }
 
 // InspectRA 只读检查接口的 RA 链路状态，不产生任何副作用。
-func InspectRA(iface string) RAStatus {
+// mode 决定诊断口径：非 L2 模式下 Applicable=false，Problems 恒为空。
+func InspectRA(mode Mode, iface string) RAStatus {
 	st := RAStatus{
 		Interface:   iface,
 		DisableIPv6: readIPv6Sysctl(iface, raDisableIPv6),
 		AcceptRA:    readIPv6Sysctl(iface, raAcceptRA),
 		Forwarding:  readIPv6Sysctl(iface, raForwarding),
 		Writable:    raWritable(iface),
+		Applicable:  mode.IsL2(),
 		GlobalV6:    interfaceGlobalV6(iface),
 	}
 	st.Problems = raProblems(st)
 	return st
 }
 
+// interfaceGlobalV6 返回接口上全部可用的全局 IPv6 地址（十进制点分形式）。
+// 返回空切片而非 nil：nil 会被 JSON 编码成 null，前端取 .length 会抛错。
+func interfaceGlobalV6(iface string) []string {
+	ifc, err := net.InterfaceByName(iface)
+	if err != nil {
+		return []string{}
+	}
+	addrs, err := ifc.Addrs()
+	if err != nil {
+		return []string{}
+	}
+	bad := v6FlagsByInterface()[iface]
+	out := []string{}
+	for _, a := range addrs {
+		ipn, ok := a.(*net.IPNet)
+		if !ok {
+			continue
+		}
+		if ipn.IP.To4() != nil || !ipn.IP.IsGlobalUnicast() || !isGlobalV6(ipn.IP) {
+			continue
+		}
+		if bad[hexAddr(ipn.IP)] {
+			continue
+		}
+		out = append(out, ipn.IP.String())
+	}
+	return out
+}
+
 // EnsureRA 在 InspectRA 的基础上尝试自愈：
 // 把 disable_ipv6 归零、accept_ra 提到 2。/proc/sys 只读时写入失败，
 // 问题原样记入 Problems——此时修复手段是 compose 的 sysctls/endpoint sysctls，
 // 容器内已无能为力。
-func EnsureRA(iface string) RAStatus {
-	st := InspectRA(iface)
-	if !st.Writable {
+//
+// 非 L2 模式直接返回只读结果：host 与 managed 的 RA 开关归属宿主网络栈
+// （网络管理器或 CNI），面板不得代为修改。
+func EnsureRA(mode Mode, iface string) RAStatus {
+	st := InspectRA(mode, iface)
+	if !st.Applicable || !st.Writable {
 		return st
 	}
 	if st.DisableIPv6 > 0 {
@@ -211,7 +275,11 @@ func EnsureRA(iface string) RAStatus {
 }
 
 // raProblems 把取值翻译成可读的故障描述。
+// 只在 RA 链路归本进程负责（L2 模式）时才判定故障。
 func raProblems(st RAStatus) []string {
+	if !st.Applicable {
+		return nil
+	}
 	var out []string
 	if st.DisableIPv6 < 0 {
 		out = append(out, "无法读取 IPv6 sysctl（接口不存在或 /proc 不可读）")
@@ -285,34 +353,6 @@ func v6FlagsByInterface() map[string]map[string]bool {
 	return out
 }
 
-// interfaceGlobalV6 返回接口上全部可用的全局 IPv6 地址（十进制点分形式）。
-func interfaceGlobalV6(iface string) []string {
-	ifc, err := net.InterfaceByName(iface)
-	if err != nil {
-		return nil
-	}
-	addrs, err := ifc.Addrs()
-	if err != nil {
-		return nil
-	}
-	bad := v6FlagsByInterface()[iface]
-	var out []string
-	for _, a := range addrs {
-		ipn, ok := a.(*net.IPNet)
-		if !ok {
-			continue
-		}
-		if ipn.IP.To4() != nil || !ipn.IP.IsGlobalUnicast() || !isGlobalV6(ipn.IP) {
-			continue
-		}
-		if bad[hexAddr(ipn.IP)] {
-			continue
-		}
-		out = append(out, ipn.IP.String())
-	}
-	return out
-}
-
 // readIPv6Sysctl 读取单个接口级 IPv6 sysctl，取不到返回 -1。
 func readIPv6Sysctl(iface, name string) int {
 	v, err := os.ReadFile(fmt.Sprintf("/proc/sys/net/ipv6/conf/%s/%s", iface, name))
@@ -344,7 +384,7 @@ func writeIPv6Sysctl(iface, name, value string) error {
 
 // hexAddr 把 IPv4/IPv6 地址转成 /proc/net/if_inet6 风格的 32 位十六进制小写串。
 func hexAddr(ip net.IP) string {
-	if v4 := ip.To4(); v4 != nil {
+	if ip.To4() != nil {
 		// /proc/net/if_inet6 只有 v6 条目；v4 不会进来，防御性返回空串。
 		return ""
 	}

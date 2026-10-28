@@ -19,7 +19,7 @@ type Config struct {
 	TrustedProxy string
 
 	// 网络
-	NativeMode  string // bridge | host | ipvlan | macvlan
+	NativeMode  string // managed | host | ipvlan | macvlan
 	Interface   string
 	ListenPort  int
 	MTU         int
@@ -67,7 +67,7 @@ func Default() Config {
 		ListenAddr:        "0.0.0.0:8080",
 		LogLevel:          "info",
 		LogFormat:         "console",
-		NativeMode:        "bridge",
+		NativeMode:        "managed",
 		Interface:         "wg0",
 		ListenPort:        51820,
 		MTU:               1420,
@@ -185,9 +185,13 @@ func (c Config) Validate() error {
 		return fmt.Errorf("config: listen addr must not be empty")
 	}
 	switch c.NativeMode {
-	case "bridge", "host", "ipvlan", "macvlan":
+	case "host", "ipvlan", "macvlan", "managed":
 	default:
-		return fmt.Errorf("config: native mode must be bridge, host, ipvlan or macvlan, got %q", c.NativeMode)
+		// bridge 是被显式移除的历史模式，报错时给出迁移方向而不是一句裸报错。
+		if strings.EqualFold(strings.TrimSpace(c.NativeMode), "bridge") {
+			return fmt.Errorf("config: native mode %q 已移除（bridge 网络拿不到路由器 RA，IPv6 无法直连），请改用 host / ipvlan / macvlan", c.NativeMode)
+		}
+		return fmt.Errorf("config: native mode must be host, ipvlan, macvlan or managed, got %q", c.NativeMode)
 	}
 	if c.ListenPort < 1 || c.ListenPort > 65535 {
 		return fmt.Errorf("config: listen port %d out of range", c.ListenPort)

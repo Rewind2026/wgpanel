@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -17,15 +18,26 @@ func TestValidateAcceptsDefaults(t *testing.T) {
 	}
 }
 
-// 四种部署模式都是合法配置：compose 文件按模式硬编码 WGP_NATIVE_MODE，
-// 校验一旦拒绝某一种，对应部署会以 exit 1 启动失败而不是降级运行。
+// 四种部署形态都是合法配置：compose 文件按模式硬编码 WGP_NATIVE_MODE，
+// systemd/K8s 清单声明 managed；校验一旦拒绝某一种，对应部署会以 exit 1
+// 启动失败而不是降级运行。
 func TestValidateAcceptsAllNetworkModes(t *testing.T) {
-	for _, m := range []string{"bridge", "host", "ipvlan", "macvlan"} {
+	for _, m := range []string{"host", "ipvlan", "macvlan", "managed"} {
 		c := Default()
 		c.NativeMode = m
 		if err := c.Validate(); err != nil {
 			t.Errorf("NativeMode=%q 应为合法模式: %v", m, err)
 		}
+	}
+}
+
+// bridge 部署模式已被移除：必须报错并给出迁移提示，而不是静默降级。
+func TestValidateRejectsRemovedBridgeMode(t *testing.T) {
+	c := Default()
+	c.NativeMode = "bridge"
+	err := c.Validate()
+	if err == nil || !strings.Contains(err.Error(), "已移除") {
+		t.Errorf("NativeMode=bridge 应报「已移除」错误，得到 %v", err)
 	}
 }
 
@@ -156,8 +168,8 @@ func TestLoadReadsEnvironment(t *testing.T) {
 		t.Error("CookieSecure 应为 true")
 	}
 	// 未设置的环境变量必须保留默认值，而不是被清零。
-	if c.NativeMode != "bridge" {
-		t.Errorf("NativeMode = %q，应保留默认值 bridge", c.NativeMode)
+	if c.NativeMode != "managed" {
+		t.Errorf("NativeMode = %q，应保留默认值 managed", c.NativeMode)
 	}
 }
 

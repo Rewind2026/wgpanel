@@ -52,7 +52,7 @@ func (d *LinuxDriver) Available() error {
 		// 这里只报 netlink 一项：它才是本函数判定失败的唯一原因，
 		// 把 iptables/tc 之类的缺口混进来会让人误以为加了 iptables 就能修好。
 		return fmt.Errorf("wgdriver: netlink access denied (需要 CAP_NET_ADMIN): %s",
-			strings.Join(caps.Problems(netdriver.ModeBridge), "; "))
+			strings.Join(caps.Problems(netdriver.ModeManaged), "; "))
 	}
 	if _, err := d.client.Devices(); err != nil {
 		return fmt.Errorf("wgdriver: wireguard control plane unavailable（宿主需已加载 wireguard 内核模块）: %w", err)

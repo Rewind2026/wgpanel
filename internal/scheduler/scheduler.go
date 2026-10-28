@@ -126,14 +126,14 @@ func (s *Scheduler) runCleanup(ctx context.Context) {
 //
 // 优先级分两档：
 //
-//	bridge：环境变量 > 面板设置 > 服务端监听地址 > 容器出口 IP
+//	managed：环境变量 > 面板设置 > 服务端监听地址 > 容器出口 IP
 //	host / ipvlan / macvlan：
 //	     环境变量 > 面板设置 > 上行接口 IPv4 > 上行接口全局 IPv6 > 监听地址 > 出口 IP
 //
-// L2/host 模式多出的两档是模式可达性的直接结果：这些部署里上行接口
+// host/L2 模式多出的两档是模式可达性的直接结果：这些部署里上行接口
 // （macvlan/ipvlan 容器的 eth0、host 模式的物理网卡）持有局域网真实地址，
 // 其中 IPv6 由上游路由器 RA/SLAAC 下发的全局地址（GUA）可被外部设备直连。
-// bridge 模式没有这一档——eth0 是 172.17.x.x 之类的 NAT 内网地址，
+// managed 模式没有这一档——eth0 是 Docker 默认网络/K8s Pod 的 NAT 内网地址，
 // 客户端根本路由不到，把它们写进配置只会制造「配置正常但连不上」的假象。
 //
 // 服务端监听地址这一级有两个坑：
@@ -161,9 +161,9 @@ func DetectPublicEndpoint(ctx context.Context, mode netdriver.Mode, svc *service
 			}
 		}
 	}
-	// L2/host 模式：上行接口的地址就是本机在链路层的真实地址，
+	// host/L2 模式：上行接口的地址就是本机在链路层的真实地址，
 	// 局域网客户端走 IPv4、外部设备走 RA 下发的 GUA，都比隧道地址更可达。
-	if mode != netdriver.ModeBridge {
+	if mode != netdriver.ModeManaged {
 		iface, v4, v6 := netdriver.UplinkAddresses()
 		if iface != "" {
 			for _, a := range v4 {
@@ -250,7 +250,7 @@ func outboundIP(ctx context.Context) string {
 	if err != nil || host == "" {
 		return ""
 	}
-	// 容器里看到的是 bridge 地址（172.17.0.x / 10.x.x.x），
+	// 容器里看到的是 NAT 内网地址（172.17.0.x / 10.x.x.x），
 	// 客户端永远路由不到它。返回它比返回空串更糟：
 	// 会被当作可信地址写进 Endpoint，让所有客户端连不上。
 	return normalizeEndpoint(host)

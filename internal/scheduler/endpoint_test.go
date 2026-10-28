@@ -10,7 +10,7 @@ func parseIPForTest(s string) net.IP { return net.ParseIP(s) }
 
 // normalizeEndpoint 必须把「客户端路由不到」的地址全部拒掉。
 //
-// 真机上暴露的缺陷：隧道地址 10.8.0.1 与容器 bridge 地址 172.17.0.3
+// 真机上暴露的缺陷：隧道地址 10.8.0.1 与容器 NAT 内网地址 172.17.0.3
 // 都被当成公网 Endpoint 写进客户端配置，客户端因此永远建不起连接，
 // 而面板没有任何提示——用户只会看到握手失败。
 func TestNormalizeEndpointRejectsUnreachableAddresses(t *testing.T) {
@@ -19,7 +19,7 @@ func TestNormalizeEndpointRejectsUnreachableAddresses(t *testing.T) {
 		"   ",
 		"10.8.0.1",      // wg 隧道地址
 		"10.8.0.1/24",   // 带掩码
-		"172.17.0.3",    // Docker bridge
+		"172.17.0.3",    // Docker 默认网络（NAT 内网）
 		"192.168.1.10",  // RFC1918
 		"127.0.0.1",     // loopback
 		"0.0.0.0",       // unspecified

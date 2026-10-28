@@ -140,7 +140,7 @@ func newLoadFixture(tb testing.TB, peers int) *loadFixture {
 		Events:    bus,
 		Settings:  st.SettingRepo(),
 		Version:   "bench",
-		NetMode:   netdriver.ModeBridge,
+		NetMode:   netdriver.ModeManaged,
 		Tickets:   authn.NewStreamTicketStore(),
 	})
 

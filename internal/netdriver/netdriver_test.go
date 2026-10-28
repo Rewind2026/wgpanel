@@ -83,14 +83,14 @@ func TestCapabilitiesUsableOnlyNeedsNetlink(t *testing.T) {
 
 func TestCapabilitiesProblems(t *testing.T) {
 	full := Capabilities{Netlink: true, TUNDevice: true, Iptables: true, Tc: true, Forwarding: true}
-	if got := (Capabilities{}).Problems(ModeBridge); len(got) == 0 {
+	if got := (Capabilities{}).Problems(ModeManaged); len(got) == 0 {
 		t.Error("无任何能力时应报告问题")
 	}
-	if got := full.Problems(ModeBridge); len(got) != 0 {
+	if got := full.Problems(ModeManaged); len(got) != 0 {
 		t.Errorf("能力齐备时不应报告问题，得到 %#v", got)
 	}
 	// 缺 tc 只影响限速，不应与缺 netlink 同等严重。
-	if got := (Capabilities{Netlink: true, TUNDevice: true, Iptables: true, Forwarding: true}).Problems(ModeBridge); len(got) != 1 {
+	if got := (Capabilities{Netlink: true, TUNDevice: true, Iptables: true, Forwarding: true}).Problems(ModeManaged); len(got) != 1 {
 		t.Errorf("仅缺 tc 时应报告且只报告一个问题，得到 %#v", got)
 	}
 	// host 模式下转发与 NAT 归属宿主，缺这两项不算面板的能力缺口。
@@ -108,9 +108,10 @@ func TestCapabilitiesProblems(t *testing.T) {
 }
 
 func TestParseMode(t *testing.T) {
-	for _, in := range []string{"bridge", "BRIDGE", " bridge "} {
+	// managed（自管 netns）：K8s Pod 与 systemd 裸机形态。
+	for _, in := range []string{"managed", "Managed", " managed "} {
 		m, err := ParseMode(in)
-		if err != nil || m != ModeBridge {
+		if err != nil || m != ModeManaged {
 			t.Errorf("ParseMode(%q) = (%v, %v)", in, m, err)
 		}
 	}
@@ -125,6 +126,12 @@ func TestParseMode(t *testing.T) {
 		m, err := ParseMode(in)
 		if err != nil || !m.IsL2() {
 			t.Errorf("ParseMode(%q) = (%v, %v)，期望 L2 模式", in, m, err)
+		}
+	}
+	// bridge 部署模式已移除：必须报错而不是静默降级成别的模式。
+	for _, in := range []string{"bridge", "BRIDGE", " bridge "} {
+		if _, err := ParseMode(in); err == nil {
+			t.Errorf("ParseMode(%q) 应返回错误（bridge 模式已移除）", in)
 		}
 	}
 	for _, in := range []string{"", "none", "gre"} {

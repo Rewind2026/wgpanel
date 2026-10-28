@@ -77,7 +77,10 @@ services:
         driver_opts:
           com.docker.network.endpoint.sysctls: "net.ipv6.conf.IFNAME.disable_ipv6=0,net.ipv6.conf.IFNAME.accept_ra=2"
 
-    # 先丢弃全部能力再逐个加回（与 bridge 文件同款减权，说明见彼处）。
+    # 最小能力：先丢弃全部再逐个加回——
+    #   NET_ADMIN     创建/配置 wireguard 链路、写路由与 iptables NAT（必需）
+    #   DAC_OVERRIDE  读写 /dev/net/tun 与 /data 卷内的文件（必需）
+    # 其余能力（其中任何一项都可能等价于宿主 root）一律不给。
     cap_drop:
       - ALL
     cap_add:
@@ -110,8 +113,8 @@ services:
       WGP_INTERFACE: wg0
       WGP_LISTEN_PORT: "51820"
       WGP_ADDRESS_CIDR: 10.8.0.1/24
-      # 隧道 MTU：L2 模式下 eth0 即物理链路（1500），WireGuard 头部开销
-      # 与 bridge 模式相同，1420 是覆盖 IPv6 外层的保守安全值。
+      # 隧道 MTU：L2 模式下 eth0 即物理链路（1500），1420 = 1500 − IPv6 外层
+      # 开销 72（IPv6 头 40 + UDP 头 8 + WireGuard 封装 24），保守取整。
       WGP_MTU: "1420"
       WGP_DNS: 1.1.1.1,8.8.8.8
       # 模式由**文件**决定，硬编码，不接受 .env 覆盖 —— 变量必须服从文件。

@@ -3,9 +3,12 @@
 # WGPanel 一键安装脚本
 # 用途：生成安全的初始账号密码、启动容器、打印访问入口。
 #
+# 容器使用 host 网络（原 bridge 部署模式已移除：docker bridge 网络拿不到
+# 路由器 RA/SLAAC，容器 IPv6 无法直连）。
+#
 # 用法：
 #   curl -fsSL https://raw.githubusercontent.com/Rewind2026/wgpanel/main/install.sh | sudo bash
-#   ./install.sh --image ghcr.io/rewind2026/wgpanel:v0.9.0 --panel-port 8080 --wg-port 51820
+#   ./install.sh --image ghcr.io/rewind2026/wgpanel:v0.10.0 --panel-port 8080 --wg-port 51820
 #
 set -euo pipefail
 
@@ -23,8 +26,8 @@ usage() {
 选项:
   --image <镜像>       容器镜像，默认 ghcr.io/rewind2026/wgpanel:latest
   --name <容器名>      容器名称，默认 wgpanel
-  --panel-port <端口>  面板端口映射，默认 8080
-  --wg-port <端口>     WireGuard 端口映射，默认 51820
+  --panel-port <端口>  面板监听端口（host 网络，直接绑定宿主），默认 8080
+  --wg-port <端口>     WireGuard UDP 端口（仅首次初始化生效），默认 51820
   --bind <地址>        面板绑定地址，默认 0.0.0.0
   -h, --help           显示帮助
 EOF
@@ -93,18 +96,18 @@ start() {
     mod_cap+=(--cap-add SYS_MODULE)
   fi
 
-  log "启动容器 $CONTAINER_NAME"
+  log "启动容器 $CONTAINER_NAME（host 网络模式）"
   docker run -d \
     --name "$CONTAINER_NAME" \
     --restart unless-stopped \
+    --network host \
     --cap-drop ALL \
     --cap-add NET_ADMIN \
     ${mod_cap[@]+"${mod_cap[@]}"} \
     --device /dev/net/tun \
-    --sysctl net.ipv4.ip_forward=1 \
-    --sysctl net.ipv4.conf.all.src_valid_mark=1 \
-    -p "${WG_PORT}:51820/udp" \
-    -p "${PANEL_BIND}:${PANEL_PORT}:8080/tcp" \
+    -e WGP_NATIVE_MODE=host \
+    -e WGP_LISTEN_ADDR="${PANEL_BIND}:${PANEL_PORT}" \
+    -e WGP_LISTEN_PORT="${WG_PORT}" \
     -v "${VOLUME_NAME}:/data" \
     -e WGP_ADMIN_PASSWORD="${password}" \
     "$IMAGE" >/dev/null
@@ -132,6 +135,12 @@ $(printf '\033[1;32m')安装完成$(printf '\033[0m')
 
 $(printf '\033[1;33m')请立即保存该密码——它只在此处显示一次。$(printf '\033[0m')
 如需重新登录，可查看启动日志：docker logs ${CONTAINER_NAME} | grep -i password
+
+host 网络模式下面板不接管宿主转发与 NAT。若客户端握手成功但无法上网，
+在宿主执行：
+  sysctl -w net.ipv4.ip_forward=1
+  iptables -t nat -A POSTROUTING -s 10.8.0.0/24 ! -o wg0 -j MASQUERADE
+（隧道网段默认 10.8.0.0/24，改过 WGP_ADDRESS_CIDR 时请对应调整。）
 
 常用命令:
   查看日志   docker logs -f ${CONTAINER_NAME}

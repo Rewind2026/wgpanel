@@ -279,10 +279,10 @@ function SettingsCard({ initial, readOnly }: { initial: Settings; readOnly: bool
 
 /** 部署网络模式与 netdriver.Mode 对应的中文标签。 */
 const NET_MODE_LABELS: Record<string, string> = {
-  bridge: '桥接',
   host: 'Host',
   ipvlan: 'IPvlan',
   macvlan: 'Macvlan',
+  managed: '自管',
 }
 
 /** 数值型 RA 状态的展示文案；-1 表示内核值读取失败。 */
@@ -302,6 +302,12 @@ function RARow({ label, value, ok }: { label: string; value: string; ok: boolean
 
 /** 把 RA 状态浓缩成一行结论：链路健康、已自愈还是有阻断问题。 */
 function raSummary(ra: RAStatus): { text: string; ok: boolean } {
+  if (!ra.applicable) {
+    return {
+      text: '当前部署模式下 RA 链路不归面板管理：host 与宿主共享网络栈，managed 的 RA 策略归宿主网络栈或 CNI。仅 ipvlan/macvlan 需要面板诊断 RA。',
+      ok: true,
+    }
+  }
   if (ra.problems?.length) {
     return { text: ra.problems[0], ok: false }
   }
@@ -388,26 +394,33 @@ function NetworkCard() {
             <p className="font-display text-xs font-semibold uppercase tracking-[0.12em]">
               IPv6 RA 链路（{ra.interface}）
             </p>
-            <Badge variant={summary.ok ? 'default' : 'destructive'}>{summary.ok ? '正常' : '异常'}</Badge>
+            <Badge variant={summary.ok ? 'default' : 'destructive'}>
+              {!ra.applicable ? '不适用' : summary.ok ? '正常' : '异常'}
+            </Badge>
           </div>
-          <div className="grid sm:grid-cols-3">
-            <RARow label="disable_ipv6" value={sysctlText(ra.disableIPv6)} ok={ra.disableIPv6 === 0} />
-            <RARow label="accept_ra" value={sysctlText(ra.acceptRA)} ok={ra.acceptRA === 2} />
-            <RARow label="forwarding" value={sysctlText(ra.forwarding)} ok={ra.forwarding > 0} />
-          </div>
-          <div className="border-t border-border/60 px-3 py-2">
+          {ra.applicable && (
+            <div className="grid sm:grid-cols-3">
+              <RARow label="disable_ipv6" value={sysctlText(ra.disableIPv6)} ok={ra.disableIPv6 === 0} />
+              <RARow label="accept_ra" value={sysctlText(ra.acceptRA)} ok={ra.acceptRA === 2} />
+              <RARow label="forwarding" value={sysctlText(ra.forwarding)} ok={ra.forwarding > 0} />
+            </div>
+          )}
+          <div
+            className={cn('px-3 py-2', ra.applicable && 'border-t border-border/60')}
+          >
             <p className={cn('text-xs', summary.ok ? 'text-muted-foreground' : 'text-destructive')}>
               {summary.text}
-              {!ra.writable && '（sysctl 只读：修复需在 compose 的 sysctls/endpoint sysctls 中注入）'}
+              {ra.applicable && !ra.writable && '（sysctl 只读：修复需在 compose 的 sysctls/endpoint sysctls 中注入）'}
             </p>
-            {ra.applied?.length ? (
+            {ra.applicable && ra.applied?.length ? (
               <p className="mt-1 text-xs text-muted-foreground">本次自愈：{ra.applied.join('、')}</p>
             ) : null}
-            {(ra.problems ?? []).slice(summary.ok ? 0 : 1).map((p) => (
-              <p key={p} className="mt-1 text-xs text-destructive">
-                {p}
-              </p>
-            ))}
+            {ra.applicable &&
+              (ra.problems ?? []).slice(summary.ok ? 0 : 1).map((p) => (
+                <p key={p} className="mt-1 text-xs text-destructive">
+                  {p}
+                </p>
+              ))}
           </div>
         </div>
 
