@@ -22,7 +22,7 @@ import { roleCan } from '@/lib/permissions'
 import { useAuth } from '@/components/providers/AuthProvider'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import type { Permission, Role } from '@/types/api'
+import type { Me, Permission } from '@/types/api'
 
 interface NavItem {
   to: string
@@ -46,6 +46,14 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/audit', label: '审计日志', code: 'LOG', icon: ScrollText, permission: 'audit:read' },
   { to: '/system', label: '系统运维', code: 'SYS', icon: Server, permission: 'settings:write' },
 ]
+
+/** 部署网络模式的中文标签，与后端 netdriver.Mode 一一对应。 */
+const NET_MODE_LABELS: Record<string, string> = {
+  host: 'Host 网络模式',
+  ipvlan: 'IPvlan 网络模式',
+  macvlan: 'Macvlan 网络模式',
+  managed: '自管网络模式',
+}
 
 export function AppLayout() {
   const { user, logout } = useAuth()
@@ -191,7 +199,7 @@ function SidebarContent({
   onLogout,
   onClose,
 }: {
-  user: { username: string; role: Role } | null
+  user: Pick<Me, 'username' | 'role' | 'netMode'> | null
   version?: string
   items: NavItem[]
   onLogout: () => void
@@ -278,7 +286,11 @@ function SidebarContent({
           </div>
           <div className="flex items-center gap-2">
             <Network className="h-3.5 w-3.5 text-primary/70" />
-            <dd>桥接网络模式</dd>
+            <dd>
+              {user?.netMode
+                ? (NET_MODE_LABELS[user.netMode] ?? `${user.netMode} 网络模式`)
+                : '桥接网络模式'}
+            </dd>
           </div>
           <div className="flex items-center gap-2">
             <Cpu className="h-3.5 w-3.5 text-primary/70" />

@@ -78,7 +78,7 @@ type Reconciler struct {
 type Option func(*Reconciler)
 
 // WithNetworkMode 指定进程所处的网络形态。
-// 默认 bridge；host 模式下不碰宿主的转发开关与防火墙规则。
+// 默认 managed（自管 netns）；host 模式下不碰宿主的转发开关与防火墙规则。
 func WithNetworkMode(m netdriver.Mode) Option {
 	return func(r *Reconciler) { r.mode = m }
 }
@@ -97,7 +97,7 @@ func New(driver wgdriver.Driver, net netdriver.NetDriver, src DesiredStateProvid
 		net:      net,
 		source:   src,
 		interval: interval,
-		mode:     netdriver.ModeBridge,
+		mode:     netdriver.ModeManaged,
 		log:      log,
 		trigger:  make(chan struct{}, 1),
 		retune:   make(chan time.Duration, 1),

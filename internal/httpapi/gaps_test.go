@@ -315,7 +315,7 @@ func newTestEnv(t *testing.T, setReconcile func(time.Duration)) *testEnv {
 			Events:    bus,
 			Settings:  st.SettingRepo(),
 			Version:   "test",
-			NetMode:   netdriver.ModeBridge,
+			NetMode:   netdriver.ModeManaged,
 			Tickets:   authn.NewStreamTicketStore(),
 			// 记录回调收到的调谐间隔，避免断言依赖真实后台协程的时序。
 			SetReconcileInterval: setReconcile,

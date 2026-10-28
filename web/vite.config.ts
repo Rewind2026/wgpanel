@@ -32,9 +32,20 @@ export default defineConfig({
     rollupOptions: {
       output: {
         // 把体积大且更新频率低的依赖拆出去，改善首屏加载。
-        manualChunks: {
-          react: ['react', 'react-dom', 'react-router-dom'],
-          query: ['@tanstack/react-query'],
+        //
+        // Vite 8 底层换成 Rolldown，Rollup 的 manualChunks 已废弃，
+        // 改用 advancedChunks.groups（语义更接近 webpack 的 splitChunks）。
+        advancedChunks: {
+          groups: [
+            {
+              name: 'react',
+              test: /node_modules[\\/](react|react-dom|react-router-dom)[\\/]/,
+            },
+            {
+              name: 'query',
+              test: /node_modules[\\/]@tanstack[\\/]react-query[\\/]/,
+            },
+          ],
         },
       },
     },

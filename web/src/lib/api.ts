@@ -5,6 +5,7 @@ import type {
   ImportResult,
   Me,
   MetricsOverview,
+  NetworkInfo,
   PageResult,
   Peer,
   PeerStats,
@@ -264,6 +265,9 @@ export const api = {
 
   updateSettings: (payload: Partial<Settings>) =>
     request<Settings>('/settings', { method: 'PUT', body: payload }),
+
+  /** 网络形态诊断：模式、接口地址、上行接口与 IPv6 RA 链路状态。 */
+  getNetwork: (signal?: AbortSignal) => request<NetworkInfo>('/system/network', { signal }),
 
   listBackups: (signal?: AbortSignal) => request<BackupRecord[]>('/backups', { signal }),
 

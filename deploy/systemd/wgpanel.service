@@ -50,7 +50,8 @@ SyslogIdentifier=wgpanel
 Environment=TZ=UTC
 Environment=WGP_DATA_DIR=/var/lib/wgpanel
 Environment=WGP_LISTEN_ADDR=0.0.0.0:8080
-Environment=WGP_NATIVE_MODE=bridge
+# managed = 面板自管所在 netns 的转发与 NAT（裸机进程的 netns 就是宿主的）。
+Environment=WGP_NATIVE_MODE=managed
 # 管理员初始口令走 EnvironmentFile，而不是写进 unit 文件
 # （unit 文件通常全局可读，任何本地用户都能看到里面的口令）。
 EnvironmentFile=-/etc/wgpanel/wgpanel.env

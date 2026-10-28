@@ -1,0 +1,175 @@
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║  【L2 必填项只需要改这三行】                                       ║
+# ║                                                                  ║
+# ║  改完直接 docker compose -f docker-compose.ipvlan.yml up -d      ║
+# ║  **不需要写 .env**（愿意用 .env 也可，变量名相同）                  ║
+# ╚══════════════════════════════════════════════════════════════════╝
+#
+# 查询真实值（在**宿主**上执行）：
+#   ip -o -4 route show default     → 第一列 dev 后面那个 = 父接口名
+#                                      第三列               = 网关
+#   ip -o -4 addr show <父接口>     → inet 那一列的 CIDR  = 子网
+#
+# ⚠️ SUBNET / GATEWAY 留空是**故意的**：每台机器都不同，写死一个「看起来能跑」
+#    的值比留空更危险。留空时 compose 会在拉镜像之前停下并打印中文提示
+#    （见下面的 ${...:?...}）。
+#
+# 优先级：shell 环境变量 > .env 文件 > :- 后面的默认值。
+# ⚠️ 要填值时把 :- 后面整段替换成你的值，**保留 ${...} 外壳**：
+#     &l2_parent  "${WGP_L2_PARENT:-ens18}"   ← 对，.env 仍可覆盖
+#     &l2_parent  "ens18"                     ← 错，.env 永久失效
+x-l2-parent:  &l2_parent  "${WGP_L2_PARENT:-${WGP_L2_PARENT:?请在文件顶部 x-l2-parent 填宿主父接口名（如 ens18）}}"
+x-l2-subnet:  &l2_subnet  "${WGP_L2_SUBNET:-${WGP_L2_SUBNET:?请在文件顶部 x-l2-subnet 填宿主所在 IPv4 子网（如 192.168.50.0/24）}}"
+x-l2-gateway: &l2_gateway "${WGP_L2_GATEWAY:-${WGP_L2_GATEWAY:?请在文件顶部 x-l2-gateway 填网关（如 192.168.50.1）}}"
+
+# 共享网络名：默认与驱动同名。要跟别的容器共用一条网络就改成对方的名字。
+# ⚠️ 网络的 IPAM（subnet/gateway）归第一个建它的人所有。
+x-l2-netname: &l2_netname "${WGP_L2_NETWORK_NAME:-ipvlan}"
+
+# 可选：固定容器 IPv4（留空 = Docker 自动分配）。
+# 必须落在 subnet 内、不等于 gateway、且**不能是宿主已在用的地址**
+# （撞宿主地址会抢 ARP，宿主入站连接全断；scripts/up.sh 会预检，纯 compose 自行确认）。
+x-l2-ipv4:    &l2_ipv4    "${WGP_L2_IPV4:-}"
+
+# docker-compose.ipvlan.yml —— ipvlan 网络模式
+#
+#   docker compose -f docker-compose.ipvlan.yml up -d    直接用 docker 官方命令
+#   WGP_NETWORK_MODE=ipvlan ./scripts/up.sh              等价封装（含参数预检）
+#
+# ipvlan 是什么：容器与父接口**共享 MAC**，直挂物理二层。
+# 容器 IPv4 从宿主网段分配，WireGuard UDP 端口绑定在容器自己的 IP 上，
+# 与宿主端口互不冲突；IPv6 完全交给上游路由器 RA + 容器 SLAAC（「路由器下发」），
+# 前缀轮换后内核自动跟随，配置永不作废。
+#
+# ipvlan vs macvlan：
+#   - ipvlan 共享 parent MAC：云厂商/交换机限制额外 MAC（部分 OpenVZ、
+#     嵌套虚拟化、无线环境）时仍能拿到 ARP/RA —— 这是它的核心优势；
+#   - ipvlan 的 parent **独占**：同一张网卡上建不了第二条 ipvlan 网络，
+#     与宿主已有 macvlan 网络共存前请确认 parent 没被占用；
+#   - 同 MAC 上 IPv6 的 link-local 地址冲突由内核 dev_id 机制解决，无需干预。
+#
+# Docker 版本要求：endpoint sysctls 需要 Docker ≥ 27 / Compose ≥ v2.27.1；
+# 建议 ≥ 28（低版本 docker-proxy 对 UDP 转发有缺陷，但 L2 模式不经过它）。
+
+services:
+  wgpanel:
+    image: ${WGP_IMAGE:-ghcr.io/rewind2026/wgpanel:latest}
+    container_name: wgpanel
+    restart: unless-stopped
+
+    # ===== 网络：ipvlan（本文件专属）=====
+    # 容器有独立 netns，直挂物理二层；不写 network_mode（与 networks 互斥）。
+    # 面板地址 = http://<容器IPv4>:8080，WireGuard = <容器IPv4>:51820/udp，
+    # 无需也不应再写 ports 映射（L2 模式下发布端口没有意义）。
+    networks:
+      l2:
+        # 固定容器 IPv4。留空 = Docker IPAM 自动分配（值来自顶部 x-l2-ipv4）。
+        ipv4_address: *l2_ipv4
+        #
+        # ---- IPv6：RA 路由器下发（SLAAC），Docker 不经手 ----
+        # 网络本身不带 v6 子网（见文件末尾 networks 段），Docker 建端点时会把
+        # disable_ipv6 置 1 —— 必须在**端点**上用 IFNAME 占位 sysctl 打开。
+        # 这是 Docker 官方 ipvlan 文档「Use router-assigned IPv6 addresses」
+        # 给出的唯一通道；接口级 sysctl 只能走 endpoint driver_opts
+        # （service 段 sysctls 里写 eth0 会被 Docker 以 unsafe procfs 拒绝）。
+        #   disable_ipv6=0 → 接口恢复收 RA
+        #   accept_ra=2    → 容器开了 forwarding，内核默认丢弃 RA，必须显式放行
+        # IFNAME 是字面占位符，Docker 挂端点时替换成真实网卡名（eth0）。
+        driver_opts:
+          com.docker.network.endpoint.sysctls: "net.ipv6.conf.IFNAME.disable_ipv6=0,net.ipv6.conf.IFNAME.accept_ra=2"
+
+    # 最小能力：先丢弃全部再逐个加回——
+    #   NET_ADMIN     创建/配置 wireguard 链路、写路由与 iptables NAT（必需）
+    #   DAC_OVERRIDE  读写 /dev/net/tun 与 /data 卷内的文件（必需）
+    # 其余能力（其中任何一项都可能等价于宿主 root）一律不给。
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+      - DAC_OVERRIDE
+
+    devices:
+      - /dev/net/tun:/dev/net/tun
+
+    # ===== 容器 netns 的转发开关与 SLAAC 策略 =====
+    # 容器内 /proc/sys 是 ro 挂载，只能在 Docker 建容器时注入（sysctls 段）。
+    # netns 级只能写 conf.all/conf.default；接口级（eth0）走上面的 endpoint sysctls，
+    # 两路缺一不可。
+    sysctls:
+      net.ipv4.ip_forward: "1"                       # VPN 转发前提（= conf.all.forwarding）
+      net.ipv4.conf.all.src_valid_mark: "1"          # WireGuard fwmark 路由需要
+      net.ipv6.conf.all.forwarding: "1"              # v6 转发；会反向压制 accept_ra，见下
+      # forwarding 开启时内核把默认态 accept_ra=1 的 RA 丢弃；
+      # default 决定 Docker 新建 eth0 那一刻的策略（双保险，eth0 上另有显式 2）。
+      net.ipv6.conf.default.accept_ra: "2"
+
+    volumes:
+      - type: volume
+        source: wgpanel-data
+        target: /data
+
+    environment:
+      WGP_DATA_DIR: /data
+      WGP_LISTEN_ADDR: 0.0.0.0:8080
+      WGP_INTERFACE: wg0
+      WGP_LISTEN_PORT: "51820"
+      WGP_ADDRESS_CIDR: 10.8.0.1/24
+      # 隧道 MTU：L2 模式下 eth0 即物理链路（1500），1420 = 1500 − IPv6 外层
+      # 开销 72（IPv6 头 40 + UDP 头 8 + WireGuard 封装 24），保守取整。
+      WGP_MTU: "1420"
+      WGP_DNS: 1.1.1.1,8.8.8.8
+      # 模式由**文件**决定，硬编码，不接受 .env 覆盖 —— 变量必须服从文件。
+      WGP_NATIVE_MODE: ipvlan
+      WGP_SAMPLE_INTERVAL: 1s
+      WGP_LOG_LEVEL: info
+      WGP_LOG_FORMAT: console
+      WGP_COOKIE_SECURE: ${WGP_COOKIE_SECURE:-0}
+      WGP_TRUSTED_PROXY: ${WGP_TRUSTED_PROXY:-}
+      WGP_ADMIN_USERNAME: ${WGP_ADMIN_USERNAME:-admin}
+      WGP_ADMIN_PASSWORD: ${WGP_ADMIN_PASSWORD:-}
+      WGP_PUBLIC_ENDPOINT: ${WGP_PUBLIC_ENDPOINT:-}
+      TZ: ${TZ:-UTC}
+      # ---- 以下引用顶部 anchor，值只在一处定义，不会两处不一致 ----
+      WGP_L2_PARENT: *l2_parent
+      WGP_L2_SUBNET: *l2_subnet
+      WGP_L2_GATEWAY: *l2_gateway
+      WGP_L2_IPV4: *l2_ipv4
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  # 显式 name：与目录名解耦，改名不会静默新建空卷丢数据。
+  wgpanel-data:
+    name: wgpanel-data
+
+networks:
+  # ===== ipvlan 共享网络 =====
+  # 只配 IPv4；IPv6 完全交给上游路由器 RA + 容器 SLAAC。
+  # ⚠️ 不要 enable_ipv6: true，也不要配 v6 子网：
+  #   - IPAM 配 v6 子网 → Docker 接管 IPv6，把前缀写死；家宽前缀（DHCPv6-PD）
+  #     一变，容器地址全部作废，公网不可达；
+  #   - enable_ipv6: true 而不配子网 → Docker 自动分一个 fd00::/64 ULA 段，
+  #     容器出现不路由的 ULA + 指向不存在网关的默认路由，污染选路。
+  #   正确做法 = Docker 官方 ipvlan 文档「Use router-assigned IPv6 addresses」，
+  #   见 service 段 networks 块的 endpoint sysctls。
+  l2:
+    name: *l2_netname
+    driver: ipvlan
+    driver_opts:
+      # 宿主父接口。ipvlan 虚拟网卡挂在它上面（parent 独占，不能是 lo）。
+      parent: *l2_parent
+    ipam:
+      config:
+        - subnet: *l2_subnet
+          gateway: *l2_gateway
+    #
+    # external 语义：
+    #   false（默认）→ compose 自己建网（不存在就建，已存在就复用），
+    #                  纯 `docker compose -f ... up -d` 不依赖脚本。
+    #   true         → compose 只加入、不创建也不删除；网络须已存在
+    #                  （scripts/up.sh 建网时自动置 true）。
+    external: "${WGP_L2_EXTERNAL:-false}"

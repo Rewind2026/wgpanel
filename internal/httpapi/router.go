@@ -237,6 +237,13 @@ func (s *Server) Handler() http.Handler {
 				r.Put("/", s.handleUpdateSettings)
 			})
 
+			// 网络诊断与设置同级：模式、接口地址、RA 链路都是部署环境的运行参数，
+			// 复用 settings:write 权限点，不新增独立读权限。
+			r.Route("/system", func(r chi.Router) {
+				r.Use(requirePerm(domain.PermSettingsWrite, s.log))
+				r.Get("/network", s.handleSystemNetwork)
+			})
+
 			r.Route("/backups", func(r chi.Router) {
 				r.Use(requirePerm(domain.PermSettingsWrite, s.log))
 				r.Get("/", s.handleListBackups)

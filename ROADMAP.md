@@ -33,10 +33,10 @@ M0 架构规划 ─▶ M1 核心链路 ─▶ M2 Web UI ─▶ M3 实时监控 �
 
 ### 交付物
 
-- [x] `ARCHITECTURE.md` — 技术栈选型（Go 1.24.6 / React 19 / SQLite / wgctrl）、`internal/` 模块拆分与包依赖方向、部署架构（含 bridge 网络兼容方案）、按迁移版本分块的真实 DDL、RBAC 权限矩阵、ADR 摘要
+- [x] `ARCHITECTURE.md` — 技术栈选型（Go 1.26 / React 19 / SQLite / wgctrl）、`internal/` 模块拆分与包依赖方向、部署架构（含 bridge 网络兼容方案）、按迁移版本分块的真实 DDL、RBAC 权限矩阵、ADR 摘要
 - [x] `ROADMAP.md` — 本文档
 - [x] Go 工程骨架 — `cmd/wgpanel` 入口、`internal/config`（env 覆盖默认值 + 合法性校验）、`internal/domain`、`internal/store`（SQLite + 顺序迁移 + 读写双连接池）、`internal/wgdriver`、`internal/netdriver`、`internal/httpapi`
-- [x] React 工程骨架 — Vite 6 + TS strict + Tailwind + 手写 shadcn 风格组件、路由、侧边栏布局
+- [x] React 工程骨架 — Vite 8 + TS strict + Tailwind + 手写 shadcn 风格组件、路由、侧边栏布局
 - [x] 交付物 — `Dockerfile`（三阶段 + 交叉编译）、`docker-compose.yml`、`install.sh`、`.env.example`、`.dockerignore`、`.gitignore`、MIT `LICENSE`
 
 ### 验收标准
@@ -62,7 +62,7 @@ M0 架构规划 ─▶ M1 核心链路 ─▶ M2 Web UI ─▶ M3 实时监控 �
 | `store` | 完整 DDL 落地（`server_config` / `server_config_revision` / `peer` / `user` / `refresh_token` / `traffic_sample` / `traffic_rollup` / `system_metric` / `audit_log` / `config_snapshot`）、顺序迁移、事务封装、读写双连接池 | ✅ |
 | `authn` | 主密钥生成与加载、AES-256-GCM 加解密封装、argon2id 密码哈希、JWT 签发校验、登录限流、常量时间比较 | ✅ |
 | `wgdriver` | `wgctrl` 实现：设备创建/销毁、`ConfigureDevice` 全参数下发、Peer 热增删、`Device()` 读握手与计数器、`wg-quick` 配置渲染、`domain ↔ wgtypes` 转换 | ✅ |
-| `netdriver` | 链路创建/地址/MTU、netlink 路由表与 fwmark、NAT MASQUERADE + FORWARD + MSS 钳制、容器能力探测、`bridge`/`host` 两种模式分流 | ✅ |
+| `netdriver` | 链路创建/地址/MTU、netlink 路由表与 fwmark、NAT MASQUERADE + FORWARD + MSS 钳制、容器能力探测、`managed`/`host` 模式分流 | ✅ |
 | `ipam` | CIDR 内最小可用地址分配、并发安全、冲突检测 | ✅ |
 | `service` | `auth_service`、`server_service`（全参数校验 + 热更新）、`peer_service`（生命周期编排）、`peer_bulk`、`user_service` | ✅ |
 | `reconciler` | 期望态 vs 实际态差异检测、设备缺失自愈、Peer 漂移修复、外部链路漂移修复、限速树重放 | ✅ |
@@ -598,6 +598,7 @@ SSE 鉴权那一行尤其值得记一笔：它不是「少注册了 8 个事件�
 | `v0.2.0` | M1 | 核心可用（技术预览） |
 | `v0.5.0` | M2 + M3 | 功能完整（Beta，可日常自用） |
 | `v0.9.0` | M4 + M5 | 生产候选（RC，需 M7 验证项补齐） |
+| `v0.10.0` | — | 网络部署模式重构（host/ipvlan/macvlan 三模式 + L2 IPv6 走 RA），移除 bridge 模式 |
 | `v1.0.0` | M7 | 稳定版（真机验证通过后发布） |
 | `v1.x` | 后续方向 | 生态与扩展 |
 

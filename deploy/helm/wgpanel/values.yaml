@@ -95,8 +95,9 @@ admin:
   existingSecret: ""
 
 wgpanel:
-  # 网络形态：bridge（面板自管转发与 NAT）或 host（宿主已配好，面板只管 WireGuard）。
-  nativeMode: bridge
+  # 网络形态：managed（默认，面板自管 Pod netns 的转发与 NAT）
+  # 或 host（hostNetwork，宿主已配好转发与 NAT，面板只管 WireGuard）。
+  nativeMode: managed
   interface: wg0
   listenPort: 51820
   addressCidr: 10.8.0.1/24

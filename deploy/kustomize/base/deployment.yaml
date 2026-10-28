@@ -51,7 +51,7 @@ spec:
             - name: WGP_LISTEN_ADDR
               value: 0.0.0.0:8080
             - name: WGP_NATIVE_MODE
-              value: bridge
+              value: managed
             - name: WGP_INTERFACE
               value: wg0
             - name: WGP_LISTEN_PORT

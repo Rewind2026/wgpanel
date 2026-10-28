@@ -40,7 +40,7 @@
     "wgpanel": {
       "type": "object",
       "properties": {
-        "nativeMode": { "enum": ["bridge", "host"] },
+        "nativeMode": { "enum": ["managed", "host"] },
         "interface": { "type": "string", "maxLength": 15 },
         "listenPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
         "addressCidr": { "type": "string" },

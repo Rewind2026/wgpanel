@@ -31,6 +31,8 @@ export interface Me {
   role: Role
   viaApi: boolean
   permissions: Permission[]
+  /** 部署网络形态：host | ipvlan | macvlan | managed（自管），与后端 netdriver.Mode 对应。 */
+  netMode?: string
 }
 
 export interface ServerConfig {
@@ -173,6 +175,37 @@ export interface Settings {
   backupDir: string
   publicEndpoint: string
   updatedAt: string
+}
+
+/** 单个网络接口的地址快照（/api/system/network）。 */
+export interface NetInterface {
+  name: string
+  addrs: string[]
+  v4: string[]
+  v6Global: string[]
+}
+
+/** 上行接口的 IPv6 RA/SLAAC 链路状态；数值 -1 表示读取失败。 */
+export interface RAStatus {
+  interface: string
+  disableIPv6: number
+  acceptRA: number
+  forwarding: number
+  writable: boolean
+  /** false 表示当前模式下 RA 链路不归面板管（host/managed 归宿主网络栈）。 */
+  applicable: boolean
+  globalV6: string[]
+  problems?: string[]
+  applied?: string[]
+}
+
+/** 网络形态诊断（/api/system/network）。 */
+export interface NetworkInfo {
+  mode: string
+  uplink: string
+  interfaces: NetInterface[]
+  ra: RAStatus
+  endpoint: string
 }
 
 export interface BackupRecord {

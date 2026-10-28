@@ -48,7 +48,7 @@ body:
     attributes:
       label: WGPanel 版本
       description: 面板左下角或 `curl -s localhost:8080/api/v1/version` 的输出
-      placeholder: v0.9.0 / dev
+      placeholder: v0.10.0 / dev
     validations:
       required: true
 
@@ -74,7 +74,7 @@ body:
         宿主内核: 5.15.0-generic
         Docker: 24.0.7
         架构: x86_64
-        WGP_NATIVE_MODE: bridge
+        WGP_NATIVE_MODE: host
         wireguard 模块: 已加载
     validations:
       required: false

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -17,6 +18,29 @@ func TestValidateAcceptsDefaults(t *testing.T) {
 	}
 }
 
+// 四种部署形态都是合法配置：compose 文件按模式硬编码 WGP_NATIVE_MODE，
+// systemd/K8s 清单声明 managed；校验一旦拒绝某一种，对应部署会以 exit 1
+// 启动失败而不是降级运行。
+func TestValidateAcceptsAllNetworkModes(t *testing.T) {
+	for _, m := range []string{"host", "ipvlan", "macvlan", "managed"} {
+		c := Default()
+		c.NativeMode = m
+		if err := c.Validate(); err != nil {
+			t.Errorf("NativeMode=%q 应为合法模式: %v", m, err)
+		}
+	}
+}
+
+// bridge 部署模式已被移除：必须报错并给出迁移提示，而不是静默降级。
+func TestValidateRejectsRemovedBridgeMode(t *testing.T) {
+	c := Default()
+	c.NativeMode = "bridge"
+	err := c.Validate()
+	if err == nil || !strings.Contains(err.Error(), "已移除") {
+		t.Errorf("NativeMode=bridge 应报「已移除」错误，得到 %v", err)
+	}
+}
+
 func TestValidateRejectsBadValues(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -25,7 +49,7 @@ func TestValidateRejectsBadValues(t *testing.T) {
 		{"空数据目录", func(c *Config) { c.DataDir = "" }},
 		{"相对数据目录", func(c *Config) { c.DataDir = "data" }},
 		{"空监听地址", func(c *Config) { c.ListenAddr = "" }},
-		{"未知原生模式", func(c *Config) { c.NativeMode = "macvlan" }},
+		{"未知原生模式", func(c *Config) { c.NativeMode = "gre" }},
 		{"端口为 0", func(c *Config) { c.ListenPort = 0 }},
 		{"端口越界", func(c *Config) { c.ListenPort = 70000 }},
 		{"MTU 过小", func(c *Config) { c.MTU = 1200 }},
@@ -144,8 +168,8 @@ func TestLoadReadsEnvironment(t *testing.T) {
 		t.Error("CookieSecure 应为 true")
 	}
 	// 未设置的环境变量必须保留默认值，而不是被清零。
-	if c.NativeMode != "bridge" {
-		t.Errorf("NativeMode = %q，应保留默认值 bridge", c.NativeMode)
+	if c.NativeMode != "managed" {
+		t.Errorf("NativeMode = %q，应保留默认值 managed", c.NativeMode)
 	}
 }
 

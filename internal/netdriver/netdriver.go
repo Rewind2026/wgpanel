@@ -26,24 +26,50 @@ var ErrNATUnavailable = fmt.Errorf("netdriver: iptables not available in contain
 type Mode string
 
 const (
-	// ModeBridge 是默认的容器 bridge 网络：进程拥有独立 netns，
-	// 转发开关、路由与 NAT 都在自己的命名空间里，必须由面板下发。
-	ModeBridge Mode = "bridge"
+	// ModeManaged 是「面板自管网络」形态：进程拥有独立 netns（K8s Pod、
+	// systemd 裸机进程），转发开关、路由与 NAT 都在自己的命名空间里，
+	// 必须由面板下发。
+	//
+	// 它不是一种 Docker 网络驱动：原 bridge 部署模式已移除——docker bridge
+	// 是独立链路，上游路由器的 RA（链路本地组播）到不了容器，SLAAC 拿不到
+	// 全局地址；发布宿主 v6 端口只能经 DNAT 解决入站握手，隧道内客户端
+	// 访问 IPv6 互联网（出站数据面）无解。
+	ModeManaged Mode = "managed"
 	// ModeHost 是 --network host：进程与宿主共享 netns，
 	// ip_forward 开关与宿主防火墙是同一个对象，
 	// 面板擅自改写等同于修改宿主策略，因此一律跳过。
 	ModeHost Mode = "host"
+	// ModeIpvlan / ModeMacvlan 是 L2 直挂网络：容器经虚拟链路直接接入物理二层，
+	// eth0 上持有局域网真实地址（IPv4 由 IPAM 分配，IPv6 由上游路由器 RA/SLAAC 下发）。
+	//
+	// 对面板而言这两种模式与自管（managed）形态的网络层职责完全一致——
+	// 转发、路由、NAT 都在容器自己的 netns 里，必须照常下发；
+	// 差别只在对外可达性：eth0 的地址就是客户端可直连的 Endpoint，
+	// 不再是 NAT 内网地址。因此它们走自管的同一条网络调谐路径，
+	// 只在 Endpoint 探测与 RA 诊断上做模式感知。
+	ModeIpvlan Mode = "ipvlan"
+	// ModeMacvlan 见 ModeIpvlan。
+	ModeMacvlan Mode = "macvlan"
 )
 
+// IsL2 报告模式是否为 L2 直挂（ipvlan/macvlan）。
+func (m Mode) IsL2() bool { return m == ModeIpvlan || m == ModeMacvlan }
+
 // ParseMode 解析网络模式字符串，未知值返回错误而不是静默降级。
+// bridge 已不再合法：部署模式只剩 host / ipvlan / macvlan（managed 由
+// systemd/K8s 清单显式声明，bridge 值交给 config 层给出迁移提示）。
 func ParseMode(s string) (Mode, error) {
 	switch Mode(strings.ToLower(strings.TrimSpace(s))) {
-	case ModeBridge:
-		return ModeBridge, nil
+	case ModeManaged:
+		return ModeManaged, nil
 	case ModeHost:
 		return ModeHost, nil
+	case ModeIpvlan:
+		return ModeIpvlan, nil
+	case ModeMacvlan:
+		return ModeMacvlan, nil
 	}
-	return "", fmt.Errorf("netdriver: native mode must be bridge or host, got %q", s)
+	return "", fmt.Errorf("netdriver: native mode must be managed, host, ipvlan or macvlan, got %q", s)
 }
 
 // Capabilities 描述容器内实际可用的网络能力。
@@ -67,7 +93,8 @@ type Capabilities struct {
 // Problems 返回人类可读的能力缺口，用于启动日志与就绪探针。
 //
 // host 模式下转发与 NAT 归属宿主，不算能力缺口；否则每个 host 部署都会刷一屏
-// 无意义的告警，把真正的问题淹没掉。
+// 无意义的告警，把真正的问题淹没掉。自管（managed/ipvlan/macvlan）形态
+// 的转发与 NAT 由面板下发，缺 iptables 或转发开关就是真缺口。
 func (c Capabilities) Problems(mode Mode) []string {
 	var out []string
 	if !c.Netlink {

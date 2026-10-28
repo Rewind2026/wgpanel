@@ -26,6 +26,13 @@ updates:
         update-types:
           - minor
           - patch
+      # Vite 与 @vitejs/plugin-react 通过 peerDependencies 绑定：
+      # plugin-react 6.x 要求 vite ^8，vite 8 又要求 plugin-react 的 peer 覆盖到 8。
+      # 拆开升级必然在 npm ci 阶段 ERESOLVE，必须成组。
+      vite:
+        patterns:
+          - "vite"
+          - "@vitejs/plugin-react"
 
   - package-ecosystem: github-actions
     directory: /

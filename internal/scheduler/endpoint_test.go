@@ -10,7 +10,7 @@ func parseIPForTest(s string) net.IP { return net.ParseIP(s) }
 
 // normalizeEndpoint 必须把「客户端路由不到」的地址全部拒掉。
 //
-// 真机上暴露的缺陷：隧道地址 10.8.0.1 与容器 bridge 地址 172.17.0.3
+// 真机上暴露的缺陷：隧道地址 10.8.0.1 与容器 NAT 内网地址 172.17.0.3
 // 都被当成公网 Endpoint 写进客户端配置，客户端因此永远建不起连接，
 // 而面板没有任何提示——用户只会看到握手失败。
 func TestNormalizeEndpointRejectsUnreachableAddresses(t *testing.T) {
@@ -19,7 +19,7 @@ func TestNormalizeEndpointRejectsUnreachableAddresses(t *testing.T) {
 		"   ",
 		"10.8.0.1",      // wg 隧道地址
 		"10.8.0.1/24",   // 带掩码
-		"172.17.0.3",    // Docker bridge
+		"172.17.0.3",    // Docker 默认网络（NAT 内网）
 		"192.168.1.10",  // RFC1918
 		"127.0.0.1",     // loopback
 		"0.0.0.0",       // unspecified
@@ -66,6 +66,35 @@ func TestIsPrivateIP(t *testing.T) {
 		ip := parseIPForTest(in)
 		if isPrivateIP(ip) {
 			t.Errorf("%q 是公网地址，不应被判为私网", in)
+		}
+	}
+}
+
+// normalizeLANEndpoint 是 L2/host 模式上行接口地址的专用规整：
+// 放行私网 v4（局域网客户端可达），其余不可达形态依旧拒绝。
+func TestNormalizeLANEndpoint(t *testing.T) {
+	accepted := map[string]string{
+		"192.168.50.2":  "192.168.50.2",
+		"10.0.0.5":      "10.0.0.5",
+		" 203.0.113.7 ": "203.0.113.7",
+	}
+	for in, want := range accepted {
+		if got := normalizeLANEndpoint(in); got != want {
+			t.Errorf("normalizeLANEndpoint(%q) = %q，期望 %q", in, got, want)
+		}
+	}
+	rejected := []string{
+		"",
+		"192.168.50.2/24", // 带掩码
+		"127.0.0.1",       // 回环
+		"169.254.1.1",     // 链路本地
+		"0.0.0.0",         // 未指定
+		"fe80::1",         // IPv6 不走这一级（由 normalizeEndpoint 处理）
+		"not-an-ip",
+	}
+	for _, in := range rejected {
+		if got := normalizeLANEndpoint(in); got != "" {
+			t.Errorf("normalizeLANEndpoint(%q) = %q，期望空串", in, got)
 		}
 	}
 }

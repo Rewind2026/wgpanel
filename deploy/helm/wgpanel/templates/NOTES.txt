@@ -36,7 +36,7 @@ WGPanel {{ .Chart.AppVersion }} 已部署到命名空间 {{ .Release.Namespace }
      iptables -t nat -A POSTROUTING -s {{ .Values.wgpanel.addressCidr }} ! -o {{ .Values.wgpanel.interface }} -j MASQUERADE
 {{- else }}
 
-   当前为 bridge 模式：面板在 Pod 独立 netns 内完成转发、路由与 NAT。
+   当前为 managed（自管）模式：面板在 Pod 独立 netns 内完成转发、路由与 NAT。
 {{- end }}
 
 4) 检查就绪状态

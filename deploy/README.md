@@ -5,11 +5,15 @@ WGPanel 是单二进制 + 单数据卷，因此各种环境都能落。
 
 | 形态 | 目录 | 适用场景 |
 |---|---|---|
-| Docker Compose | [`../docker-compose.yml`](../docker-compose.yml) | 单机自建，最常见 |
+| Docker Compose | [`../docker-compose.host.yml`](../docker-compose.host.yml)（另有 ipvlan / macvlan 两份 L2 文件） | 单机自建，最常见 |
 | Helm | [`helm/wgpanel`](helm/wgpanel) | 已有 K8s 集群 |
 | Kustomize | [`kustomize/`](kustomize) | 已有裸 manifest + 不想引入 Helm |
 | systemd | [`systemd/wgpanel.service`](systemd/wgpanel.service) | 裸机 / 无容器环境 |
 | 反代与 TLS | [`reverse-proxy/README.md`](reverse-proxy/README.md) | 面板要暴露到公网 |
+
+K8s 与 systemd 形态使用 `WGP_NATIVE_MODE=managed`（自管）：进程在自己的
+netns 内完成转发、路由与 NAT。Docker 的 bridge 部署模式已移除
+（bridge 网络拿不到路由器 RA，容器 IPv6 无法直连）。
 
 ## 所有形态共通的三件事
 
@@ -52,11 +56,11 @@ SQLite 开了 WAL，直接 `cp /data` 可能拿到撕裂的快照。
 ## 升级
 
 ```bash
-# compose
-docker compose pull && docker compose up -d
+# compose（按实际使用的模式文件替换 -f 参数）
+docker compose -f docker-compose.host.yml pull && docker compose -f docker-compose.host.yml up -d
 
 # helm
-helm upgrade wgpanel deploy/helm/wgpanel --set image.tag=v0.9.0
+helm upgrade wgpanel deploy/helm/wgpanel --set image.tag=v0.10.0
 
 # systemd
 systemctl stop wgpanel && cp wgpanel /usr/local/bin/ && systemctl start wgpanel

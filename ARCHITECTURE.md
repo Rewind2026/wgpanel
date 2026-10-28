@@ -1,13 +1,13 @@
 # WGPanel 项目架构设计文档
 
-> 生产可用级 WireGuard VPN Docker 部署方案 —— 现代化 Web 管理 UI + 全参数可视化配置 + 实时监控面板 + 单命令一键部署 + 原生兼容 Docker bridge 网络
+> 生产可用级 WireGuard VPN Docker 部署方案 —— 现代化 Web 管理 UI + 全参数可视化配置 + 实时监控面板 + 单命令一键部署 + host / ipvlan / macvlan 三种网络模式（L2 直挂 IPv6 走 RA 下发）
 
 | 项 | 值 |
 |---|---|
 | 项目代号 | WGPanel |
 | License | MIT |
-| 后端 | Go 1.24.6（单静态二进制，`CGO_ENABLED=0`） |
-| 前端 | React 19 + TypeScript 5 + Vite 6 + Tailwind CSS 3 + shadcn 风格组件 |
+| 后端 | Go 1.26（单静态二进制，`CGO_ENABLED=0`） |
+| 前端 | React 19 + TypeScript 5 + Vite 8 + Tailwind CSS 3 + shadcn 风格组件 |
 | 存储 | SQLite（WAL 模式，纯 Go 驱动 `modernc.org/sqlite`，零 CGO） |
 | 内核交互 | `golang.zx2c4.com/wireguard/wgctrl`（netlink）+ `vishvananda/netlink` |
 | 镜像形态 | 多阶段构建 → `alpine:3.20` + 单二进制 + 内嵌前端静态资源 |
@@ -28,8 +28,8 @@
 | UI | 简易表单 / 纯文本 | 现代化暗色玻璃拟态仪表盘，全响应式（桌面 + 移动端） |
 | 参数暴露 | 极简，参数写死在 compose | **全量 wgctrl 参数可视化**：ListenPort / MTU / DNS / SaveConfig / AllowedIPs / PersistentKeepalive / 预共享密钥 / 路由表与 fwmark |
 | 监控 | 无 / 仅 `wg show` | SSE 实时推送：CPU/内存/磁盘/网络 IO、隧道总吞吐、每 Peer 握手时间、上下行字节、在线状态、连接时长、IP 分配、历史曲线（1h/24h/7d/30d） |
-| 部署 | 依赖 `NET_ADMIN` + 手动配置 | 单命令：`docker run -d -v wgp-data:/data --cap-add=NET_ADMIN --device /dev/net/tun -p 51820:51820 -p 8080:8080 ghcr.io/rewind2026/wgpanel:latest` |
-| 网络模式 | 多数强制 host 网络 | **原生兼容 Docker 默认 bridge**，通过 `NET_ADMIN` + 容器内独立 netns 完成 NAT/转发，不需要 `--network host` |
+| 部署 | 依赖 `NET_ADMIN` + 手动配置 | 单命令：`docker run -d --network host -v wgp-data:/data --cap-add=NET_ADMIN --device /dev/net/tun -e WGP_NATIVE_MODE=host ghcr.io/rewind2026/wgpanel:latest` |
+| 网络模式 | 多数强制 host 网络 | **三种部署模式**：host 共享宿主栈；ipvlan / macvlan 直挂物理二层、IPv6 由路由器 RA/SLAAC 下发。原 bridge 模式已移除——RA 到不了 bridge 容器，IPv6 无法直连 |
 | 账号 | 无 / 单用户密码 | 单账号模型：首个 owner 由 `WGP_ADMIN_USERNAME` / `WGP_ADMIN_PASSWORD` 初始化，此后只能自助改密；账号相关操作全部进审计日志 |
 | 配置持久化 | wg0.conf 覆盖式 | SQLite 事务化存储 + 自动生成 wg 配置 + 配置版本历史与回滚 |
 
@@ -60,7 +60,7 @@
 
 | 关注点 | 选型 | 选型理由 |
 |---|---|---|
-| 语言 | **Go 1.24** | 静态编译单文件、goroutine 天然适配长连接推送、WireGuard 生态原生 Go 实现、交叉编译无依赖 |
+| 语言 | **Go 1.26** | 静态编译单文件、goroutine 天然适配长连接推送、WireGuard 生态原生 Go 实现、交叉编译无依赖 |
 | HTTP 路由 | **chi v5** | 轻量（~10KB）、零反射中间件栈、路由分组与中间件组合最直观，性能对标 Gin |
 | 数据库 | **SQLite (modernc.org/sqlite)** | 纯 Go 驱动 → CGO_ENABLED=0 静态二进制 → 可用 `alpine`/`scratch`；单文件持久化契合「无外部依赖」定位；WAL 模式下读写并发足够单机场景 |
 | 内核控制 | **wgctrl** | 官方 WireGuard 项目的 Go 控制面库，通过 netlink 操作内核模块；支持热增删 Peer、读握手/流量计数器 |
@@ -76,7 +76,7 @@
 | 关注点 | 选型 | 选型理由 |
 |---|---|---|
 | 框架 | **React 19 + TypeScript 5** | 生态最完备、类型安全、团队上手成本最低 |
-| 构建 | **Vite 6** | 秒级 HMR，产物自动分包，生产构建 < 10 s |
+| 构建 | **Vite 8** | 秒级 HMR，产物自动分包，生产构建 < 10 s |
 | 样式 | **Tailwind CSS 3** | 原子化 CSS，产物体积小；设计 token 化（CSS 变量）支持暗色主题 |
 | 组件 | **手写 shadcn 风格组件** | 源码级组件（copy-in），完全可控可二次开发，无组件库版本绑架 |
 | 图表 | **手写 SVG 图表组件** | 本项目只需单轴时序曲线，引入 ECharts（约 300 KB gzip）为一个折线图不划算；SVG 直接绑定 CSS 变量实现暗色主题 |
@@ -89,7 +89,7 @@
 
 | 关注点 | 选型 |
 |---|---|
-| 镜像 | 多阶段 Dockerfile：`node:22-alpine` 构建前端 → `golang:1.24-alpine` 构建后端（CGO_ENABLED=0） → `alpine:3.20` 运行时 |
+| 镜像 | 多阶段 Dockerfile：`node:22-alpine` 构建前端 → `golang:1.26-alpine` 构建后端（CGO_ENABLED=0） → `alpine:3.20` 运行时 |
 | 编排 | `docker compose`（v2 内置 `docker compose up -d`），无依赖 Compose 编排其它中间件 |
 | 反向代理 | 可选。用户可直接暴露 8080，也可用 Nginx/Caddy 前置做 TLS |
 
@@ -135,7 +135,7 @@
 └──────────────────────────────────┬───────────────────────────────────────┘
                                    │
                           ┌────────┴────────┐
-                          │  eth0 (bridge) │  ← Docker 默认 bridge 兼容
+                          │  eth0（host / ipvlan / macvlan 模式直挂链路）│
                           └────────┬────────┘
                                    │
                     ┌──────────────┴───────────────┐
@@ -272,7 +272,7 @@ Peer/Server 的所有变更先落 SQLite（期望态），再由 Reconciler 每 
 
 这不是理论上的谨慎。真机验证时发现该缺陷此前一直存在：SSE 路由挂在通用鉴权组内，而前端 `new EventSource('/api/v1/metrics/stream')` 什么凭据都不带，于是监控页长期处于 401 静默重连状态——界面只显示「未连接」，不报任何错，curl 带 `Authorization` 头的测试却一切正常。文档里当时写着「依赖 Cookie 传递身份」，而代码中根本没有读 Cookie 的路径，文档与实现已经脱节。
 
-**ADR-4：Bridge 网络原生兼容方案**
+**ADR-4：Bridge 网络原生兼容方案**（历史决策，已被 ADR-8 取代：bridge 部署模式已移除）
 
 不使用 `--network host`，容器内完成全部网络配置：
 
@@ -296,6 +296,15 @@ Access Token（15 min，存内存）+ Refresh Token（7 d，HttpOnly Cookie，�
 
 早期设计允许配置上下线时执行的 shell 命令。已移除，原因是：面板的网络配置全部走 netlink 与固定参数的 iptables 调用，覆盖了原本需要钩子的场景；而执行用户输入的命令，等同于把容器内的 root shell 交给任何能改服务端配置的角色（Operator 及以上）。保留一个可写却从不执行的字段同样危险——运维会以为它生效了。
 
+**ADR-8：移除 bridge 部署模式，网络形态收敛为 managed / host / ipvlan / macvlan**
+
+bridge 网络是 Docker 自己的独立链路，上游路由器的 RA（链路本地组播）到不了容器，SLAAC 拿不到全局地址；发布宿主 IPv6 端口只能经 DNAT 解决入站握手，隧道内客户端访问 IPv6 互联网（出站数据面）没有出路。而 L2 直挂（ipvlan / macvlan）按 Docker 官方「router-assigned IPv6 addresses」配方，eth0 可直接持有 RA 下发的全局地址。因此：
+
+- Docker 部署模式只剩 host / ipvlan / macvlan，各对应一份完整独立的 compose 文件，`scripts/up.sh` 统一入口与前置校验；
+- 原 bridge 的「容器内自管转发 / 路由 / NAT」调谐路径**保留**，更名为 `managed`（K8s Pod、systemd 裸机形态），`netdriver` 行为不变；
+- `WGP_NATIVE_MODE=bridge` 在配置校验层直接报错并给出迁移提示，不静默降级；
+- L2 模式 IPv6 一律走 RA/SLAAC（端点 sysctls + netns sysctls 组合），不做 NAT66、不经 DHCPv6。
+
 ---
 
 ## 4. 部署架构设计
@@ -312,7 +321,7 @@ COPY web/ ./
 RUN npm run build                      # 产出 dist/
 
 # Stage 2: 后端构建（静态 + 交叉编译）
-FROM golang:1.24-alpine AS api
+FROM golang:1.26-alpine AS api
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -351,11 +360,12 @@ ENTRYPOINT ["/usr/local/bin/wgpanel"]
 docker run -d \
   --name wgpanel \
   --restart unless-stopped \
+  --network host \
   --cap-drop ALL --cap-add NET_ADMIN \
   --device /dev/net/tun \
-  --sysctl net.ipv4.ip_forward=1 \
-  --sysctl net.ipv4.conf.all.src_valid_mark=1 \
-  -p 51820:51820/udp -p 8080:8080/tcp \
+  -e WGP_NATIVE_MODE=host \
+  -e WGP_LISTEN_ADDR=0.0.0.0:8080 \
+  -e WGP_LISTEN_PORT=51820 \
   -v wgpanel-data:/data \
   -e WGP_ADMIN_PASSWORD=<首次初始化密码，可选> \
   ghcr.io/rewind2026/wgpanel:latest
@@ -363,7 +373,7 @@ docker run -d \
 
 不默认授予 `SYS_MODULE`：加载 `wireguard` 内核模块是宿主的职责，现代发行版的 `wireguard` 包已内置该模块，容器内自行加载反而会把权限面扩大到整个宿主内核。
 
-配套 `docker-compose.yml`（唯一服务，无依赖编排）与 `install.sh`（生成随机密码 → 启动 → 打印面板地址与首个客户端配置）。
+配套三份按模式独立的 `docker-compose.{host,ipvlan,macvlan}.yml`（唯一服务，无依赖编排，见 ADR-8）与 `install.sh`（生成随机密码 → 以 host 网络启动 → 打印面板地址）。
 
 ### 4.3 容器内需要的能力与获取方式
 
@@ -371,15 +381,15 @@ docker run -d \
 |---|---|---|
 | 创建 TUN 设备 | `/dev/net/tun` + `CAP_NET_ADMIN` | `--device /dev/net/tun --cap-add NET_ADMIN` |
 | 加载 `wireguard` 内核模块（宿主未加载时） | 宿主侧 `modprobe wireguard` | **不**在容器内授予 `CAP_SYS_MODULE`；探测失败时 `/readyz` 返回 503 并在日志中给出该提示 |
-| 开启 IP 转发 | 写 `net.ipv4.ip_forward` | `--sysctl net.ipv4.ip_forward=1` |
+| 开启 IP 转发 | 写 `net.ipv4.ip_forward` | L2 compose 的 `sysctls` 段或 `--sysctl net.ipv4.ip_forward=1`（host 模式归属宿主） |
 | 配置路由与 NAT | `CAP_NET_ADMIN` + 可写的 `/run` | netlink / iptables-nft；`/run/xtables.lock` 需对运行用户可写（Helm/Kustomize/systemd 均已挂载或预创建） |
 | 数据持久化 | 宿主可写卷 | `-v wgpanel-data:/data`（命名卷继承镜像内属主，非 root 开箱即用） |
 
-### 4.4 Bridge 网络下的关键调优
+### 4.4 容器网络下的关键调优
 
 | 问题 | 方案 |
 |---|---|
-| bridge 默认 MTU 1500 导致隧道性能损失 | 默认接口 MTU 自动计算：宿主 eth0 MTU − 80（IPv6/WG 开销），并提供 UI 手动覆盖 |
+| 容器链路默认 MTU 1500 导致隧道性能损失 | 默认接口 MTU 自动计算：宿主 eth0 MTU − 80（IPv6/WG 开销），并提供 UI 手动覆盖 |
 | 双重 NAT 导致 MTU 黑洞 | 开启 UDP MSS clamping（`TCPMSS --clamp-mss-to-pmtu`）在 FORWARD 链 |
 | 容器重启后接口丢失 | `reconciler` 启动时检测接口缺失 → 重建设备 → 重新下发 Peer |
 | 端口占用 | 启动前探测 51820 是否被占用，冲突时给出明确错误而非静默失败 |
@@ -960,7 +970,7 @@ wgpanel/
 ├── LICENSE                      # MIT
 ├── go.mod / go.sum
 ├── Dockerfile
-├── docker-compose.yml
+├── docker-compose.host.yml / .ipvlan.yml / .macvlan.yml
 ├── install.sh                   # 一键安装脚本
 ├── .env.example
 ├── .dockerignore / .gitignore
@@ -1010,7 +1020,7 @@ wgpanel/
 | 风险 | 影响 | 应对 |
 |---|---|---|
 | 宿主未加载 `wireguard` 内核模块 | 无法创建接口 | 启动能力探测 → `/readyz` 返回 503，日志给出 `modprobe wireguard` 提示。**不提供 `wireguard-go` 用户态回落**：它会带来一个纯 Go 的额外依赖与完全不同的数据面行为，与「内核面 + netlink 控制面」的架构前提冲突 |
-| Docker bridge 双重 NAT 导致 MTU 黑洞 | 丢包/断流 | 自动 MTU 计算 + MSS clamping + UI 手动覆盖 |
+| 容器双重 NAT 导致 MTU 黑洞 | 丢包/断流 | 自动 MTU 计算 + MSS clamping + UI 手动覆盖 |
 | `iptables` 需要可写的 `/run/xtables.lock` | 非 root 下规则下发失败 | 镜像内 `/run` 可写；Helm/Kustomize 挂 `emptyDir` 到 `/run`；systemd 用 `ExecStartPre` 预创建锁文件并放开 `ReadWritePaths` |
 | 非 root + `CAP_NET_ADMIN` 在老 Docker 上失效 | 无法下发网络配置 | 依赖 Docker ≥ 20.10 把 `--cap-add` 放进 ambient 集合；老版本用 `docker run --user 0:0` 临时兜底，已写入镜像注释与部署文档 |
 | `WGP_TRUSTED_PROXY` 配成 `0.0.0.0/0` | 任意请求可伪造 `X-Forwarded-For`，登录限流被绕过 | 文档与部署模板中明确禁止；反代文档单列一条 |
@@ -1028,7 +1038,7 @@ wgpanel/
 1. **全参数可视化**：不是「端口 + 密钥」两个输入框，而是把 wgctrl 的每一个字段都映射为带校验与说明的 UI 控件。
 2. **开箱即用的实时监控**：默认开启，无需安装 exporter 或额外容器。
 3. **零依赖一键部署**：单镜像、单卷、单命令，不需要 Compose 编排数据库/监控栈，不需要前置安装 `wireguard-tools`。
-4. **Bridge 网络原生**：不需要 `--network host`，安全边界更清晰，同时保留 host 逃生通道。
+4. **三种网络模式**：host / ipvlan / macvlan 各一份独立 compose；L2 直挂的 IPv6 由路由器 RA/SLAAC 下发，外部设备可直连（原 bridge 模式因拿不到 RA 已移除，见 ADR-8）。
 5. **声明式调谐**：内核状态可自愈，接口崩溃/容器重启后自动恢复。
 6. **企业级权限与审计**：从第一天就内置 RBAC 与审计，而不是后补。
 

@@ -21,7 +21,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { ConfirmDialog } from '@/components/ui/Dialog'
 import { Field, Input, Select } from '@/components/ui/Input'
 import { EmptyState, TableSkeleton } from '@/components/ui/Skeleton'
-import type { BackupRecord, Settings } from '@/types/api'
+import type { BackupRecord, NetworkInfo, RAStatus, Settings } from '@/types/api'
 
 export function SystemPage() {
   const { user } = useAuth()
@@ -84,6 +84,8 @@ export function SystemPage() {
         initial={settingsQuery.data}
         readOnly={!canWrite}
       />
+
+      {canWrite && <NetworkCard />}
 
       <BackupCard />
 
@@ -270,6 +272,173 @@ function SettingsCard({ initial, readOnly }: { initial: Settings; readOnly: bool
             </Button>
           </div>
         )}
+      </CardContent>
+    </Card>
+  )
+}
+
+/** 部署网络模式与 netdriver.Mode 对应的中文标签。 */
+const NET_MODE_LABELS: Record<string, string> = {
+  host: 'Host',
+  ipvlan: 'IPvlan',
+  macvlan: 'Macvlan',
+  managed: '自管',
+}
+
+/** 数值型 RA 状态的展示文案；-1 表示内核值读取失败。 */
+const sysctlText = (v: number) => (v < 0 ? '读取失败' : String(v))
+
+/** IPv6 RA/SLAAC 链路状态行。ipvlan/macvlan 下这条链路决定外部能否经 v6 直连。 */
+function RARow({ label, value, ok }: { label: string; value: string; ok: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-3 px-3 py-1.5">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className={cn('font-mono text-xs', ok ? 'text-success' : 'text-destructive')}>
+        {value}
+      </span>
+    </div>
+  )
+}
+
+/** 把 RA 状态浓缩成一行结论：链路健康、已自愈还是有阻断问题。 */
+function raSummary(ra: RAStatus): { text: string; ok: boolean } {
+  if (!ra.applicable) {
+    return {
+      text: '当前部署模式下 RA 链路不归面板管理：host 与宿主共享网络栈，managed 的 RA 策略归宿主网络栈或 CNI。仅 ipvlan/macvlan 需要面板诊断 RA。',
+      ok: true,
+    }
+  }
+  if (ra.problems?.length) {
+    return { text: ra.problems[0], ok: false }
+  }
+  if (ra.applied?.length) {
+    return { text: `已自愈：${ra.applied.join('、')}`, ok: true }
+  }
+  if (ra.globalV6.length > 0) {
+    return { text: `SLAAC 正常（${ra.globalV6.length} 个全局地址）`, ok: true }
+  }
+  return { text: '等待 RA 下发', ok: true }
+}
+
+/** 网络形态诊断卡：模式、接口地址与上行接口的 RA 链路状态。 */
+function NetworkCard() {
+  const netQuery = useQuery({
+    queryKey: ['network'],
+    queryFn: ({ signal }) => api.getNetwork(signal),
+    refetchInterval: 15_000,
+  })
+
+  if (netQuery.isLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>网络</CardTitle>
+          <CardDescription>部署网络形态与 IPv6 RA 链路</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <TableSkeleton rows={3} />
+        </CardContent>
+      </Card>
+    )
+  }
+  if (netQuery.isError || !netQuery.data) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>网络</CardTitle>
+          <CardDescription>部署网络形态与 IPv6 RA 链路</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ErrorBox message={(netQuery.error as ApiError)?.message ?? '加载失败'} />
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const info: NetworkInfo = netQuery.data
+  const ra = info.ra
+  const uplink = info.interfaces.find((i) => i.name === info.uplink)
+  const summary = raSummary(ra)
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <CardTitle>网络</CardTitle>
+            <CardDescription>部署网络形态与上行接口的 IPv6 RA 链路</CardDescription>
+          </div>
+          <Badge variant="outline" className="font-mono uppercase">
+            {NET_MODE_LABELS[info.mode] ?? info.mode}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+          <InfoRow label="上行接口" value={info.uplink || '—'} mono />
+          <InfoRow
+            label="上行 IPv4"
+            value={uplink?.v4.length ? uplink.v4.join('、') : '—'}
+            mono
+          />
+          <InfoRow
+            label="上行全局 IPv6（RA/SLAAC）"
+            value={uplink?.v6Global.length ? uplink.v6Global.join('、') : '—'}
+            mono
+          />
+          <InfoRow label="当前探测 Endpoint" value={info.endpoint || '（空，未生成）'} mono />
+        </div>
+
+        <div className="border border-border/70 bg-background/60">
+          <div className="flex items-center justify-between gap-3 border-b border-border/60 px-3 py-2">
+            <p className="font-display text-xs font-semibold uppercase tracking-[0.12em]">
+              IPv6 RA 链路（{ra.interface}）
+            </p>
+            <Badge variant={summary.ok ? 'default' : 'destructive'}>
+              {!ra.applicable ? '不适用' : summary.ok ? '正常' : '异常'}
+            </Badge>
+          </div>
+          {ra.applicable && (
+            <div className="grid sm:grid-cols-3">
+              <RARow label="disable_ipv6" value={sysctlText(ra.disableIPv6)} ok={ra.disableIPv6 === 0} />
+              <RARow label="accept_ra" value={sysctlText(ra.acceptRA)} ok={ra.acceptRA === 2} />
+              <RARow label="forwarding" value={sysctlText(ra.forwarding)} ok={ra.forwarding > 0} />
+            </div>
+          )}
+          <div
+            className={cn('px-3 py-2', ra.applicable && 'border-t border-border/60')}
+          >
+            <p className={cn('text-xs', summary.ok ? 'text-muted-foreground' : 'text-destructive')}>
+              {summary.text}
+              {ra.applicable && !ra.writable && '（sysctl 只读：修复需在 compose 的 sysctls/endpoint sysctls 中注入）'}
+            </p>
+            {ra.applicable && ra.applied?.length ? (
+              <p className="mt-1 text-xs text-muted-foreground">本次自愈：{ra.applied.join('、')}</p>
+            ) : null}
+            {ra.applicable &&
+              (ra.problems ?? []).slice(summary.ok ? 0 : 1).map((p) => (
+                <p key={p} className="mt-1 text-xs text-destructive">
+                  {p}
+                </p>
+              ))}
+          </div>
+        </div>
+
+        <details className="border border-border/70 bg-background/60">
+          <summary className="cursor-pointer px-3 py-2 font-mono text-xs text-muted-foreground">
+            全部接口地址（{info.interfaces.length}）
+          </summary>
+          <div className="space-y-1 px-3 pb-3">
+            {info.interfaces.map((it) => (
+              <div key={it.name} className="flex flex-wrap gap-x-4 font-mono text-[11px]">
+                <span className="text-primary">{it.name}</span>
+                <span className="text-muted-foreground">
+                  {it.addrs.length ? it.addrs.join('  ') : '（无地址）'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </details>
       </CardContent>
     </Card>
   )

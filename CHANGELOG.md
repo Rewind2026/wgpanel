@@ -6,6 +6,54 @@
 
 ## [未发布]
 
+### 变更
+
+- **Go 工具链升到 1.26**。`golang.org/x/crypto` 与 `modernc.org/sqlite` 的新版本
+  都把 `go` 指令提到 1.26.0，`go.mod` 随之跟进。Dockerfile 的构建阶段基础镜像
+  从 `golang:1.24-alpine` 同步到 `golang:1.26-alpine`——旧镜像在
+  `GOTOOLCHAIN=local` 下会直接报 `go.mod requires go >= 1.26.0`，
+  连 `go mod download` 都过不去，镜像构建整段失败。CI 的 `go-version-file: go.mod`
+  本来就跟着 `go.mod` 走，无需改动。
+- **前端构建链升到 Vite 8**。Vite 8 底层换成 Rolldown，Rollup 的 `manualChunks`
+  已废弃，改用 `advancedChunks.groups`（语义更接近 webpack 的 `splitChunks`）；
+  `@vitejs/plugin-react` 同步升到 6.x（peer 依赖要求 Vite 8，两者必须同升）。
+  分包结果不变：`react` 与 `query` 两个 chunk 照旧拆出。
+
+### 修复
+
+- **依赖升级 PR 集体失败**。三个 dependabot PR 并非代码问题，而是版本互锁：
+  plugin-react 6.x 的 peer 要求 `vite ^8`，而仓库还钉在 `vite ^6`；
+  反过来 `vite 8` 又要求 plugin-react 的 peer 覆盖到 8。
+  单独升任一方都会在 `npm ci` 阶段 ERESOLVE，必须成对升级。
+
+## [0.10.0] - 2026-10-28
+
+### 变更
+
+- **网络部署模式重构**：Docker 部署支持 `host` / `ipvlan` / `macvlan` 三种模式，
+  每模式一份完整独立的 compose 文件（模式硬编码 `WGP_NATIVE_MODE`，不接受 .env 覆盖），
+  `scripts/up.sh` 统一入口并做 L2 前置校验（必填参数、宿主地址冲突、ipvlan parent 独占）。
+  L2 模式 IPv6 采用 Docker 官方「router-assigned IPv6 addresses」配方——网络不带 v6 子网，
+  端点 sysctls 打开 `disable_ipv6=0` / `accept_ra=2`，容器内再注入
+  `net.ipv6.conf.all.forwarding=1`，eth0 直接从上游路由器 RA/SLAAC 拿全局地址（GUA），
+  外部设备可直连 WireGuard，家宽前缀轮换自动跟随。面板新增「系统运维 → 网络」诊断卡
+  （模式、各接口地址、RA 三开关状态与自愈、实时 Endpoint），侧栏显示当前网络模式。
+  K8s 与 systemd 形态改用 `managed`（自管 netns 转发/NAT）表述，行为不变。
+  compose 数据卷补显式 `name: wgpanel-data`，目录改名不再静默新建空卷「丢」数据。
+- **RA 诊断口径随模式收敛**。`netdriver.InspectRA` / `EnsureRA` 改为接收部署模式参数，
+  `RAStatus` 新增 `applicable` 字段：只有 L2 模式（ipvlan/macvlan）的 RA 链路归面板管，
+  `host` 与 `managed` 的 RA 策略归宿主网络栈或 CNI，面板不越界读写，
+  界面按「不适用」展示而不是把宿主策略误报成可修复故障。
+
+### 移除
+
+- **bridge 部署模式**。docker bridge 是独立链路，上游路由器的 RA（链路本地组播）
+  到不了容器，SLAAC 拿不到全局地址；发布宿主 IPv6 端口只能经 DNAT 解决入站握手，
+  隧道内客户端访问 IPv6 互联网（出站数据面）无解。`WGP_NATIVE_MODE=bridge` 现在
+  启动即报错并提示迁移方向；`docker-compose.yml`（bridge 版）已删除；
+  `install.sh` 与文档中的 `docker run` 示例改为 `--network host`。
+  原「容器内自管转发/NAT」能力以 `managed` 形态保留给 K8s / systemd，见 ARCHITECTURE ADR-8。
+
 ### 新增
 
 - **站点图标**。之前面板没有 favicon，浏览器标签页只显示一个默认的地球图标，
@@ -428,5 +476,6 @@ M0-M6 已交付，M7 真机验证在本轮收尾，199 项回归全绿。
 - M3 实时监控：SSE 推送、指标采集、流量按 `peer_id` 归因、逐级降采样。
 - M4 加固：RBAC 四角色、审计日志、登录限流、健康探针、代理信任、CSP。
 
-[未发布]: https://github.com/Rewind2026/wgpanel/compare/v0.9.0...HEAD
+[未发布]: https://github.com/Rewind2026/wgpanel/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/Rewind2026/wgpanel/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/Rewind2026/wgpanel/compare/v0.1.0...v0.9.0
