@@ -25,6 +25,9 @@
   plugin-react 6.x 的 peer 要求 `vite ^8`，而仓库还钉在 `vite ^6`；
   反过来 `vite 8` 又要求 plugin-react 的 peer 覆盖到 8。
   单独升任一方都会在 `npm ci` 阶段 ERESOLVE，必须成对升级。
+- **TypeScript 升到 7**。TS 7 移除了 `baseUrl` 编译选项，`tsconfig.json` 里的
+  `baseUrl: "."` 直接报 `TS5102`。该选项本就多余——`paths` 自 TS 4.1 起
+  就能相对 `tsconfig.json` 所在目录解析，去掉后 `@/*` 别名照常工作。
 
 ## [0.10.0] - 2026-10-28
 

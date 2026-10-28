@@ -7,7 +7,7 @@
 | 项目代号 | WGPanel |
 | License | MIT |
 | 后端 | Go 1.26（单静态二进制，`CGO_ENABLED=0`） |
-| 前端 | React 19 + TypeScript 5 + Vite 8 + Tailwind CSS 3 + shadcn 风格组件 |
+| 前端 | React 19 + TypeScript 7 + Vite 8 + Tailwind CSS 3 + shadcn 风格组件 |
 | 存储 | SQLite（WAL 模式，纯 Go 驱动 `modernc.org/sqlite`，零 CGO） |
 | 内核交互 | `golang.zx2c4.com/wireguard/wgctrl`（netlink）+ `vishvananda/netlink` |
 | 镜像形态 | 多阶段构建 → `alpine:3.20` + 单二进制 + 内嵌前端静态资源 |
@@ -75,7 +75,7 @@
 
 | 关注点 | 选型 | 选型理由 |
 |---|---|---|
-| 框架 | **React 19 + TypeScript 5** | 生态最完备、类型安全、团队上手成本最低 |
+| 框架 | **React 19 + TypeScript 7** | 生态最完备、类型安全、团队上手成本最低 |
 | 构建 | **Vite 8** | 秒级 HMR，产物自动分包，生产构建 < 10 s |
 | 样式 | **Tailwind CSS 3** | 原子化 CSS，产物体积小；设计 token 化（CSS 变量）支持暗色主题 |
 | 组件 | **手写 shadcn 风格组件** | 源码级组件（copy-in），完全可控可二次开发，无组件库版本绑架 |
