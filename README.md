@@ -116,7 +116,7 @@ docker compose -f docker-compose.macvlan.yml up -d
 ## 本地开发
 
 ```bash
-# 后端（需要 Go 1.24+）
+# 后端（需要 Go 1.26+）
 go build ./... && go test ./...
 
 # 前端（需要 Node 22+）

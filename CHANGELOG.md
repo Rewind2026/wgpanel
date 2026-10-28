@@ -6,6 +6,26 @@
 
 ## [未发布]
 
+### 变更
+
+- **Go 工具链升到 1.26**。`golang.org/x/crypto` 与 `modernc.org/sqlite` 的新版本
+  都把 `go` 指令提到 1.26.0，`go.mod` 随之跟进。Dockerfile 的构建阶段基础镜像
+  从 `golang:1.24-alpine` 同步到 `golang:1.26-alpine`——旧镜像在
+  `GOTOOLCHAIN=local` 下会直接报 `go.mod requires go >= 1.26.0`，
+  连 `go mod download` 都过不去，镜像构建整段失败。CI 的 `go-version-file: go.mod`
+  本来就跟着 `go.mod` 走，无需改动。
+- **前端构建链升到 Vite 8**。Vite 8 底层换成 Rolldown，Rollup 的 `manualChunks`
+  已废弃，改用 `advancedChunks.groups`（语义更接近 webpack 的 `splitChunks`）；
+  `@vitejs/plugin-react` 同步升到 6.x（peer 依赖要求 Vite 8，两者必须同升）。
+  分包结果不变：`react` 与 `query` 两个 chunk 照旧拆出。
+
+### 修复
+
+- **依赖升级 PR 集体失败**。三个 dependabot PR 并非代码问题，而是版本互锁：
+  plugin-react 6.x 的 peer 要求 `vite ^8`，而仓库还钉在 `vite ^6`；
+  反过来 `vite 8` 又要求 plugin-react 的 peer 覆盖到 8。
+  单独升任一方都会在 `npm ci` 阶段 ERESOLVE，必须成对升级。
+
 ## [0.10.0] - 2026-10-28
 
 ### 变更

@@ -6,8 +6,8 @@
 |---|---|
 | 项目代号 | WGPanel |
 | License | MIT |
-| 后端 | Go 1.24.6（单静态二进制，`CGO_ENABLED=0`） |
-| 前端 | React 19 + TypeScript 5 + Vite 6 + Tailwind CSS 3 + shadcn 风格组件 |
+| 后端 | Go 1.26（单静态二进制，`CGO_ENABLED=0`） |
+| 前端 | React 19 + TypeScript 5 + Vite 8 + Tailwind CSS 3 + shadcn 风格组件 |
 | 存储 | SQLite（WAL 模式，纯 Go 驱动 `modernc.org/sqlite`，零 CGO） |
 | 内核交互 | `golang.zx2c4.com/wireguard/wgctrl`（netlink）+ `vishvananda/netlink` |
 | 镜像形态 | 多阶段构建 → `alpine:3.20` + 单二进制 + 内嵌前端静态资源 |
@@ -60,7 +60,7 @@
 
 | 关注点 | 选型 | 选型理由 |
 |---|---|---|
-| 语言 | **Go 1.24** | 静态编译单文件、goroutine 天然适配长连接推送、WireGuard 生态原生 Go 实现、交叉编译无依赖 |
+| 语言 | **Go 1.26** | 静态编译单文件、goroutine 天然适配长连接推送、WireGuard 生态原生 Go 实现、交叉编译无依赖 |
 | HTTP 路由 | **chi v5** | 轻量（~10KB）、零反射中间件栈、路由分组与中间件组合最直观，性能对标 Gin |
 | 数据库 | **SQLite (modernc.org/sqlite)** | 纯 Go 驱动 → CGO_ENABLED=0 静态二进制 → 可用 `alpine`/`scratch`；单文件持久化契合「无外部依赖」定位；WAL 模式下读写并发足够单机场景 |
 | 内核控制 | **wgctrl** | 官方 WireGuard 项目的 Go 控制面库，通过 netlink 操作内核模块；支持热增删 Peer、读握手/流量计数器 |
@@ -76,7 +76,7 @@
 | 关注点 | 选型 | 选型理由 |
 |---|---|---|
 | 框架 | **React 19 + TypeScript 5** | 生态最完备、类型安全、团队上手成本最低 |
-| 构建 | **Vite 6** | 秒级 HMR，产物自动分包，生产构建 < 10 s |
+| 构建 | **Vite 8** | 秒级 HMR，产物自动分包，生产构建 < 10 s |
 | 样式 | **Tailwind CSS 3** | 原子化 CSS，产物体积小；设计 token 化（CSS 变量）支持暗色主题 |
 | 组件 | **手写 shadcn 风格组件** | 源码级组件（copy-in），完全可控可二次开发，无组件库版本绑架 |
 | 图表 | **手写 SVG 图表组件** | 本项目只需单轴时序曲线，引入 ECharts（约 300 KB gzip）为一个折线图不划算；SVG 直接绑定 CSS 变量实现暗色主题 |
@@ -89,7 +89,7 @@
 
 | 关注点 | 选型 |
 |---|---|
-| 镜像 | 多阶段 Dockerfile：`node:22-alpine` 构建前端 → `golang:1.24-alpine` 构建后端（CGO_ENABLED=0） → `alpine:3.20` 运行时 |
+| 镜像 | 多阶段 Dockerfile：`node:22-alpine` 构建前端 → `golang:1.26-alpine` 构建后端（CGO_ENABLED=0） → `alpine:3.20` 运行时 |
 | 编排 | `docker compose`（v2 内置 `docker compose up -d`），无依赖 Compose 编排其它中间件 |
 | 反向代理 | 可选。用户可直接暴露 8080，也可用 Nginx/Caddy 前置做 TLS |
 
@@ -321,7 +321,7 @@ COPY web/ ./
 RUN npm run build                      # 产出 dist/
 
 # Stage 2: 后端构建（静态 + 交叉编译）
-FROM golang:1.24-alpine AS api
+FROM golang:1.26-alpine AS api
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

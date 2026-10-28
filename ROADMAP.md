@@ -33,10 +33,10 @@ M0 架构规划 ─▶ M1 核心链路 ─▶ M2 Web UI ─▶ M3 实时监控 �
 
 ### 交付物
 
-- [x] `ARCHITECTURE.md` — 技术栈选型（Go 1.24.6 / React 19 / SQLite / wgctrl）、`internal/` 模块拆分与包依赖方向、部署架构（含 bridge 网络兼容方案）、按迁移版本分块的真实 DDL、RBAC 权限矩阵、ADR 摘要
+- [x] `ARCHITECTURE.md` — 技术栈选型（Go 1.26 / React 19 / SQLite / wgctrl）、`internal/` 模块拆分与包依赖方向、部署架构（含 bridge 网络兼容方案）、按迁移版本分块的真实 DDL、RBAC 权限矩阵、ADR 摘要
 - [x] `ROADMAP.md` — 本文档
 - [x] Go 工程骨架 — `cmd/wgpanel` 入口、`internal/config`（env 覆盖默认值 + 合法性校验）、`internal/domain`、`internal/store`（SQLite + 顺序迁移 + 读写双连接池）、`internal/wgdriver`、`internal/netdriver`、`internal/httpapi`
-- [x] React 工程骨架 — Vite 6 + TS strict + Tailwind + 手写 shadcn 风格组件、路由、侧边栏布局
+- [x] React 工程骨架 — Vite 8 + TS strict + Tailwind + 手写 shadcn 风格组件、路由、侧边栏布局
 - [x] 交付物 — `Dockerfile`（三阶段 + 交叉编译）、`docker-compose.yml`、`install.sh`、`.env.example`、`.dockerignore`、`.gitignore`、MIT `LICENSE`
 
 ### 验收标准

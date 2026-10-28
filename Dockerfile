@@ -14,7 +14,10 @@ RUN npm run build
 
 
 ########## Stage 2: 后端静态编译 ##########
-FROM golang:1.24-alpine AS api
+# 基础镜像版本必须 >= go.mod 的 go 指令。go.mod 要求 1.26 时，
+# 用 1.24 的镜像会因 GOTOOLCHAIN=local 直接报
+# "go.mod requires go >= 1.26.0"，连 go mod download 都过不去。
+FROM golang:1.26-alpine AS api
 
 WORKDIR /src
 
