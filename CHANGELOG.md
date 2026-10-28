@@ -18,6 +18,9 @@
   已废弃，改用 `advancedChunks.groups`（语义更接近 webpack 的 `splitChunks`）；
   `@vitejs/plugin-react` 同步升到 6.x（peer 依赖要求 Vite 8，两者必须同升）。
   分包结果不变：`react` 与 `query` 两个 chunk 照旧拆出。
+- **常规依赖跟进**：`react` / `react-dom` 升到 19.3.1，`lucide-react` 升到 1.60.0
+  （0.x → 1.x 大版本，界面用到的 17 个图标名全部保留），`modernc.org/sqlite`
+  升到 1.61.0 及相关间接依赖跟进。
 
 ### 修复
 
