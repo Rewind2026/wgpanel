@@ -6,6 +6,8 @@
 
 ## [未发布]
 
+## [0.11.0] - 2026-10-29
+
 ### 变更
 
 - **Go 工具链升到 1.26**。`golang.org/x/crypto` 与 `modernc.org/sqlite` 的新版本
@@ -31,6 +33,20 @@
 - **TypeScript 升到 7**。TS 7 移除了 `baseUrl` 编译选项，`tsconfig.json` 里的
   `baseUrl: "."` 直接报 `TS5102`。该选项本就多余——`paths` 自 TS 4.1 起
   就能相对 `tsconfig.json` 所在目录解析，去掉后 `@/*` 别名照常工作。
+
+### 修复
+
+- **L2 共享网络跨项目复用被 label 校验挡住**。`docker-compose.ipvlan.yml` 与
+  `docker-compose.macvlan.yml` 的 networks 段 key 原为 `l2`，而 ikev2-panel
+  建网时打的 label 是 `com.docker.compose.network=ikev2-l2`。compose 在
+  `external=false` 复用一条已存在的同名网络时，会校验网络上的该 label
+  是否等于本文件的 networks 段 key，不匹配直接报错：
+  `network <名> was found but has incorrect label`。
+  结果是 wgpanel 复用 ikev2-panel 建的网络会失败，反向亦然，建网顺序变成硬约束。
+  两份 compose 的 key 统一改为 `ikev2-l2`，`scripts/up.sh` 手动建网时打的
+  label 同步对齐 —— 两边 key 一致后谁先建网对方都能复用，建网顺序不再敏感。
+  网络的**实际名字**由 `name:`（`WGP_L2_NETWORK_NAME`，默认与驱动同名）决定，
+  与 key 无关，两者不要混淆。
 
 ## [0.10.0] - 2026-10-28
 
@@ -482,6 +498,7 @@ M0-M6 已交付，M7 真机验证在本轮收尾，199 项回归全绿。
 - M3 实时监控：SSE 推送、指标采集、流量按 `peer_id` 归因、逐级降采样。
 - M4 加固：RBAC 四角色、审计日志、登录限流、健康探针、代理信任、CSP。
 
-[未发布]: https://github.com/Rewind2026/wgpanel/compare/v0.10.0...HEAD
+[未发布]: https://github.com/Rewind2026/wgpanel/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/Rewind2026/wgpanel/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/Rewind2026/wgpanel/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/Rewind2026/wgpanel/compare/v0.1.0...v0.9.0

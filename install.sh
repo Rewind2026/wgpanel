@@ -8,7 +8,7 @@
 #
 # 用法：
 #   curl -fsSL https://raw.githubusercontent.com/Rewind2026/wgpanel/main/install.sh | sudo bash
-#   ./install.sh --image ghcr.io/rewind2026/wgpanel:v0.10.0 --panel-port 8080 --wg-port 51820
+#   ./install.sh --image ghcr.io/rewind2026/wgpanel:v0.11.0 --panel-port 8080 --wg-port 51820
 #
 set -euo pipefail
 

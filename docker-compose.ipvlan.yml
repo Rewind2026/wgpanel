@@ -62,7 +62,8 @@ services:
     # 面板地址 = http://<容器IPv4>:8080，WireGuard = <容器IPv4>:51820/udp，
     # 无需也不应再写 ports 映射（L2 模式下发布端口没有意义）。
     networks:
-      l2:
+      # key 固定用 ikev2-l2（跨项目兼容）——原因见文件末尾 networks 段注释。
+      ikev2-l2:
         # 固定容器 IPv4。留空 = Docker IPAM 自动分配（值来自顶部 x-l2-ipv4）。
         ipv4_address: *l2_ipv4
         #
@@ -149,6 +150,15 @@ volumes:
 networks:
   # ===== ipvlan 共享网络 =====
   # 只配 IPv4；IPv6 完全交给上游路由器 RA + 容器 SLAAC。
+  #
+  # ⚠️ networks key 固定用 ikev2-l2（跨项目兼容，别改成 l2 / wg-l2 等别的名字）：
+  #   compose 在 external=false 复用一条已存在的同名网络时，会校验网络上的
+  #   com.docker.compose.network label 是否等于本段 key，不匹配就报
+  #     "network <名> was found but has incorrect label"
+  #   ikev2-panel 建/共用这条网用的 key 就是 ikev2-l2（它的 scripts/up.sh
+  #   手动建网时也打这个 label）。两边 key 一致后，谁先建网对方都能以
+  #   纯 compose 路径复用，建网顺序不再敏感。
+  #   网络的**实际名字**由下面 name:（顶部 x-l2-netname）决定，与 key 无关。
   # ⚠️ 不要 enable_ipv6: true，也不要配 v6 子网：
   #   - IPAM 配 v6 子网 → Docker 接管 IPv6，把前缀写死；家宽前缀（DHCPv6-PD）
   #     一变，容器地址全部作废，公网不可达；
@@ -156,7 +166,7 @@ networks:
   #     容器出现不路由的 ULA + 指向不存在网关的默认路由，污染选路。
   #   正确做法 = Docker 官方 ipvlan 文档「Use router-assigned IPv6 addresses」，
   #   见 service 段 networks 块的 endpoint sysctls。
-  l2:
+  ikev2-l2:
     name: *l2_netname
     driver: ipvlan
     driver_opts:

@@ -21,4 +21,4 @@ patches:
 
 images:
   - name: ghcr.io/rewind2026/wgpanel
-    newTag: v0.10.0
+    newTag: v0.11.0

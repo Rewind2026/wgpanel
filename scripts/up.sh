@@ -150,9 +150,15 @@ if { [ "$NETWORK_MODE" = "ipvlan" ] || [ "$NETWORK_MODE" = "macvlan" ]; } \
     log "创建共享网络 '$_netname'（driver=$_driver parent=${WGP_L2_PARENT} subnet=${WGP_L2_SUBNET} gateway=${WGP_L2_GATEWAY}）"
     # 不带 --ipv6：IPv6 完全交给上游路由器 RA + 容器 SLAAC。
     # 带了 Docker 会自动分一个 fd00::/64 ULA 段，污染选路。
+    #
+    # ⚠️ --label com.docker.compose.network=ikev2-l2 必须与 compose 文件
+    #   networks 段的 key 一致：compose external=false 复用已存在同名网络时
+    #   校验该 label == key，不匹配报 "incorrect label"（纯 compose 路径就
+    #   用不了本脚本建的网）。key 与 ikev2-panel 生态对齐为 ikev2-l2，
+    #   谁先建网对方都能复用。
     docker network create --driver "$_driver" \
       --opt "parent=${WGP_L2_PARENT}" "${_extra[@]+"${_extra[@]}"}" \
-      --label "com.docker.compose.network=l2" \
+      --label "com.docker.compose.network=ikev2-l2" \
       --subnet "${WGP_L2_SUBNET}" --gateway "${WGP_L2_GATEWAY}" "$_netname" \
       || die "创建共享网络 '$_netname' 失败（检查 parent 名、子网是否与既有 L2 网络重叠）"
     ok "共享网络 '$_netname' 已创建"

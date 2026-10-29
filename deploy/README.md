@@ -60,7 +60,7 @@ SQLite 开了 WAL，直接 `cp /data` 可能拿到撕裂的快照。
 docker compose -f docker-compose.host.yml pull && docker compose -f docker-compose.host.yml up -d
 
 # helm
-helm upgrade wgpanel deploy/helm/wgpanel --set image.tag=v0.10.0
+helm upgrade wgpanel deploy/helm/wgpanel --set image.tag=v0.11.0
 
 # systemd
 systemctl stop wgpanel && cp wgpanel /usr/local/bin/ && systemctl start wgpanel
