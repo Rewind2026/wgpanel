@@ -42,12 +42,12 @@ type Config struct {
 	SampleBatchSize int
 
 	// 安全
-	MasterKey        string
-	JWTSecret        string
-	AdminUsername    string
-	AdminPassword    string
-	SessionTTL       time.Duration
-	RefreshTTL       time.Duration
+	MasterKey     string
+	JWTSecret     string
+	AdminUsername string
+	AdminPassword string
+	SessionTTL    time.Duration
+	RefreshTTL    time.Duration
 	// IdleTTL 是会话空闲超时窗口(借鉴 DDNS 的滑动空闲语义)。
 	// refresh token 的 created_at 就是「最后一次活跃续期」的时刻:
 	// 活跃用户周期性 refresh 让轮换出的新令牌不断前移,永远追不上窗口;

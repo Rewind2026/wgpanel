@@ -20,8 +20,8 @@ type AuthService struct {
 	refreshTTL time.Duration
 	// idleTTL 是会话空闲超时窗口,传给 refresh 的消费校验(0 = 关闭)。
 	// 语义见 UserRepo.ConsumeRefreshToken。
-	idleTTL    time.Duration
-	audit      *store.AuditRepo
+	idleTTL time.Duration
+	audit   *store.AuditRepo
 }
 
 // NewAuthService 构造认证服务。

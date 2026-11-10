@@ -1,7 +1,10 @@
 # syntax=docker/dockerfile:1
 
 ########## Stage 1: 前端构建 ##########
-FROM node:22-alpine AS web
+# 固定在构建机原生平台：前端产物是平台无关的静态 JS，按目标平台重建毫无意义，
+# 反而会让 arm/v7 在 QEMU 里跑 npm —— rolldown 没有 linux-arm-musleabihf 的
+# 原生 binding（alpine 是 musl），v0.12.0/v0.13.0 的镜像因此从未发布成功。
+FROM --platform=$BUILDPLATFORM node:22-alpine AS web
 
 WORKDIR /src/web
 
@@ -17,7 +20,9 @@ RUN npm run build
 # 基础镜像版本必须 >= go.mod 的 go 指令。go.mod 要求 1.26 时，
 # 用 1.24 的镜像会因 GOTOOLCHAIN=local 直接报
 # "go.mod requires go >= 1.26.0"，连 go mod download 都过不去。
-FROM golang:1.26-alpine AS api
+# FROM --platform=$BUILDPLATFORM：Go 在这里做的是显式交叉编译（下方 GOOS/GOARCH），
+# 构建机原生平台跑 go build 即可，避免 QEMU 下 arm/v7 编译 Go 慢一个数量级。
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS api
 
 WORKDIR /src
 
