@@ -55,6 +55,48 @@ type RequestOptions = {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
   body?: unknown
   signal?: AbortSignal
+  /** 内部标记:401 刷新重试后的第二次尝试,防止 refresh 失败时无限递归。 */
+  _retried?: boolean
+}
+
+/**
+ * 401 后的单飞刷新(借鉴 DDNS 的「401 统一兜底」思路,但 wgpanel 有
+ * refresh cookie,所以兜底动作是续期而不是跳登录):
+ * 并发撞上 401 的请求共享同一次 refresh 调用,避免连环轮换把
+ * 一次性 refresh token 互相踩掉。
+ */
+let refreshInFlight: Promise<Session | null> | null = null
+function tryRefresh(): Promise<Session | null> {
+  if (!refreshInFlight) {
+    // 走裸 fetch 而不是 request():request() 的 401 分支会再触发刷新,形成递归。
+    refreshInFlight = (async () => {
+      try {
+        const res = await fetch('/api/v1/auth/refresh', {
+          method: 'POST',
+          credentials: 'include',
+        })
+        if (!res.ok) return null
+        const payload = (await res.json()) as Envelope<Session> | null
+        if (payload?.data?.accessToken) setAccessToken(payload.data.accessToken)
+        return payload?.data ?? null
+      } catch {
+        return null
+      }
+    })()
+    void refreshInFlight.catch(() => {}).then(() => {
+      refreshInFlight = null
+    })
+  }
+  return refreshInFlight
+}
+
+/** 401 时先续期再重试一次;登录/刷新自身失败不重试。返回 true 表示已重试。 */
+async function retryAfterRefresh(path: string, opts: RequestOptions): Promise<boolean> {
+  if (opts._retried || path.startsWith('/auth/login') || path.startsWith('/auth/refresh')) {
+    return false
+  }
+  const refreshed = await tryRefresh()
+  return refreshed !== null
 }
 
 async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
@@ -83,7 +125,14 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   }
 
   if (!res.ok) {
-    if (res.status === 401) onUnauthorized?.()
+    if (res.status === 401) {
+      // access token 15 分钟绝对过期,活跃用户的下一个请求大概率是
+      // 「过期而非掉线」——先续期重试,失败才算真的掉线。
+      if (await retryAfterRefresh(path, opts)) {
+        return request<T>(path, { ...opts, _retried: true })
+      }
+      onUnauthorized?.()
+    }
     throw new ApiError(
       res.status,
       payload?.code ?? res.status,
@@ -99,7 +148,7 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
  * 这些端点（CSV 导出、审计导出、备份文件）返回的不是 JSON 包络，
  * 走 request() 会因为解析失败拿不到内容，故单独一条路径。
  */
-async function download(path: string, fallbackName: string): Promise<void> {
+async function download(path: string, fallbackName: string, retried = false): Promise<void> {
   const headers: Record<string, string> = { Accept: '*/*' }
   if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`
 
@@ -108,6 +157,9 @@ async function download(path: string, fallbackName: string): Promise<void> {
     credentials: 'include',
   })
   if (!res.ok) {
+    if (res.status === 401 && !retried && (await tryRefresh())) {
+      return download(path, fallbackName, true)
+    }
     if (res.status === 401) onUnauthorized?.()
     throw new ApiError(res.status, res.status, `下载失败（HTTP ${res.status}）`)
   }
@@ -172,11 +224,14 @@ export const api = {
    * 服务端 wg0.conf 全文。该端点返回的是 text/plain 而非 JSON 包络，
    * 走 request() 会解析失败，故单独按文本读取。
    */
-  serverConfig: async (signal?: AbortSignal) => {
+  serverConfig: async (signal?: AbortSignal, retried = false): Promise<string> => {
     const headers: Record<string, string> = { Accept: 'text/plain' }
     if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`
     const res = await fetch('/api/v1/server/config', { headers, credentials: 'include', signal })
     if (!res.ok) {
+      if (res.status === 401 && !retried && (await tryRefresh())) {
+        return api.serverConfig(signal, true)
+      }
       if (res.status === 401) onUnauthorized?.()
       throw new ApiError(res.status, res.status, `读取服务端配置失败（HTTP ${res.status}）`)
     }
@@ -231,7 +286,7 @@ export const api = {
   exportPeersCSV: () => download('/peers/export', 'wgpanel-peers.csv'),
 
   /** CSV 导入走 text/plain 直传，不能包 JSON 包络。 */
-  importPeersCSV: async (csv: string) => {
+  importPeersCSV: async (csv: string, retried = false): Promise<ImportResult> => {
     const headers: Record<string, string> = { 'Content-Type': 'text/csv' }
     if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`
     const res = await fetch('/api/v1/peers/import', {
@@ -239,6 +294,10 @@ export const api = {
     })
     const payload = (await res.json().catch(() => null)) as Envelope<ImportResult> | null
     if (!res.ok) {
+      if (res.status === 401 && !retried && (await tryRefresh())) {
+        // 运行时经 api 引用:对象字面量内部拿不到属性自身的作用域名。
+        return api.importPeersCSV(csv, true)
+      }
       if (res.status === 401) onUnauthorized?.()
       throw new ApiError(res.status, payload?.code ?? res.status,
         payload?.message || `导入失败（HTTP ${res.status}）`)

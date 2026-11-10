@@ -48,6 +48,12 @@ type Config struct {
 	AdminPassword    string
 	SessionTTL       time.Duration
 	RefreshTTL       time.Duration
+	// IdleTTL 是会话空闲超时窗口(借鉴 DDNS 的滑动空闲语义)。
+	// refresh token 的 created_at 就是「最后一次活跃续期」的时刻:
+	// 活跃用户周期性 refresh 让轮换出的新令牌不断前移,永远追不上窗口;
+	// 空闲超过窗口后的下一次 refresh 会被拒绝,会话就地终结。
+	// 0 = 关闭空闲超时,仅受 RefreshTTL 绝对过期约束。
+	IdleTTL          time.Duration
 	LoginMaxAttempts int
 	LoginLockWindow  time.Duration
 
@@ -86,6 +92,7 @@ func Default() Config {
 		AdminUsername:     "admin",
 		SessionTTL:        15 * time.Minute,
 		RefreshTTL:        30 * 24 * time.Hour,
+		IdleTTL:           60 * time.Minute,
 		LoginMaxAttempts:  5,
 		LoginLockWindow:   15 * time.Minute,
 	}
@@ -155,6 +162,9 @@ func Load() (Config, error) {
 	if err = envDur("WGP_REFRESH_TTL", &c.RefreshTTL); err != nil {
 		return c, err
 	}
+	if err = envDur("WGP_IDLE_TTL", &c.IdleTTL); err != nil {
+		return c, err
+	}
 	if err = envInt("WGP_LOGIN_MAX_ATTEMPTS", &c.LoginMaxAttempts); err != nil {
 		return c, err
 	}
@@ -210,6 +220,9 @@ func (c Config) Validate() error {
 	}
 	if c.PolicyInterval < 10*time.Second {
 		return fmt.Errorf("config: policy interval must be >= 10s")
+	}
+	if c.IdleTTL < 0 {
+		return fmt.Errorf("config: idle ttl must not be negative (0 disables idle timeout), got %v", c.IdleTTL)
 	}
 	return nil
 }

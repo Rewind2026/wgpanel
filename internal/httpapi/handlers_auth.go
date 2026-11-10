@@ -40,6 +40,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]any{
 		"accessToken": session.AccessToken,
 		"expiresIn":   session.ExpiresIn,
+		// 空闲超时窗口(分钟,0=关闭)给前端做本地空闲踢出与续期决策。
+		"idleMinutes": int(s.cfg.IdleTTL.Minutes()),
 		"user":        session.User,
 	})
 }
@@ -61,6 +63,7 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]any{
 		"accessToken": session.AccessToken,
 		"expiresIn":   session.ExpiresIn,
+		"idleMinutes": int(s.cfg.IdleTTL.Minutes()),
 		"user":        session.User,
 	})
 }
@@ -119,6 +122,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		"role":        p.Role,
 		"permissions": p.Role.Permissions(),
 		"netMode":     string(s.netMode),
+		"idleMinutes": int(s.cfg.IdleTTL.Minutes()),
 	})
 }
 

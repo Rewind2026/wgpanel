@@ -272,7 +272,7 @@ func newTestEnv(t *testing.T, setReconcile func(time.Duration)) *testEnv {
 
 	issuer := authn.NewTokenIssuer([]byte("0123456789abcdef0123456789abcdef"), time.Hour)
 	authSvc := service.NewAuthService(st.UserRepo(), issuer,
-		authn.NewLoginLimiter(10, time.Minute), time.Hour, time.Hour, st.AuditRepo())
+		authn.NewLoginLimiter(10, time.Minute), time.Hour, time.Hour, 0, st.AuditRepo())
 
 	// 每个角色建一个真实用户，RBAC 判定走的就是库里的这一列。
 	userIDs := make(map[domain.Role]int64, 4)

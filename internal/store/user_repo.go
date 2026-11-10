@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Rewind2026/wgpanel/internal/domain"
 )
@@ -258,17 +259,24 @@ func (r *UserRepo) StoreRefreshToken(ctx context.Context, userID int64, token st
 
 // ConsumeRefreshToken 校验并撤销刷新令牌，返回所属用户 id。
 //
+// idleTTL 是会话空闲超时窗口(借鉴 DDNS 的滑动空闲语义):轮换型刷新令牌的
+// created_at 就是「最后一次活跃续期」的时刻——活跃用户周期性 refresh,
+// 新令牌的 created_at 不断前移,永远追不上窗口;空闲超过窗口后的下一次
+// refresh 在这里被拒绝。0 = 关闭该检查(登出走的就是 0:登出是用户的
+// 显式动作,不该被空闲窗口拦住)。
+//
 // 用单条 UPDATE ... RETURNING 完成「校验 + 撤销 + 取主」，让轮换在并发下保持一次性：
 // 若拆成先查后撤，两个并发刷新都能通过校验，同一令牌会被使用两次。
-func (r *UserRepo) ConsumeRefreshToken(ctx context.Context, token string) (int64, error) {
+func (r *UserRepo) ConsumeRefreshToken(ctx context.Context, token string, idleTTL time.Duration) (int64, error) {
 	var userID int64
 	err := r.s.db.QueryRowContext(ctx,
 		`UPDATE refresh_token SET revoked = 1
 		 WHERE token_hash = ? AND revoked = 0 AND expires_at > ?
+		   AND (? <= 0 OR created_at > ?)
 		 RETURNING user_id`,
-		HashToken(token), nowUnix()).Scan(&userID)
+		HashToken(token), nowUnix(), int64(idleTTL.Seconds()), nowUnix()-int64(idleTTL.Seconds())).Scan(&userID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return 0, domain.ErrUnauthorized("refresh token is invalid, revoked or expired")
+		return 0, domain.ErrUnauthorized("refresh token is invalid, revoked, expired or idle")
 	}
 	if err != nil {
 		return 0, fmt.Errorf("store: consume refresh token: %w", err)

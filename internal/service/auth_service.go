@@ -18,18 +18,22 @@ type AuthService struct {
 	limiter    *authn.LoginLimiter
 	sessionTTL time.Duration
 	refreshTTL time.Duration
+	// idleTTL 是会话空闲超时窗口,传给 refresh 的消费校验(0 = 关闭)。
+	// 语义见 UserRepo.ConsumeRefreshToken。
+	idleTTL    time.Duration
 	audit      *store.AuditRepo
 }
 
 // NewAuthService 构造认证服务。
 func NewAuthService(users *store.UserRepo, issuer *authn.TokenIssuer, limiter *authn.LoginLimiter,
-	sessionTTL, refreshTTL time.Duration, audit *store.AuditRepo) *AuthService {
+	sessionTTL, refreshTTL, idleTTL time.Duration, audit *store.AuditRepo) *AuthService {
 	return &AuthService{
 		users:      users,
 		issuer:     issuer,
 		limiter:    limiter,
 		sessionTTL: sessionTTL,
 		refreshTTL: refreshTTL,
+		idleTTL:    idleTTL,
 		audit:      audit,
 	}
 }
@@ -153,7 +157,7 @@ func (s *AuthService) Login(ctx context.Context, req LoginRequest) (*domain.Sess
 
 // Refresh 轮换刷新令牌并签发新的访问令牌。
 func (s *AuthService) Refresh(ctx context.Context, refreshToken string) (*domain.Session, error) {
-	userID, err := s.users.ConsumeRefreshToken(ctx, refreshToken)
+	userID, err := s.users.ConsumeRefreshToken(ctx, refreshToken, s.idleTTL)
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +198,9 @@ func (s *AuthService) Logout(ctx context.Context, refreshToken string, p *authn.
 	if refreshToken == "" {
 		return nil
 	}
-	userID, err := s.users.ConsumeRefreshToken(ctx, refreshToken)
+	// 登出不受空闲窗口约束(idleTTL 传 0):它是用户的显式动作,
+	// 就算会话已经空闲超窗,也该把登出审计记录下来,而不是静默失败。
+	userID, err := s.users.ConsumeRefreshToken(ctx, refreshToken, 0)
 	if err != nil {
 		return nil // 幂等：令牌已失效时登出仍视为成功
 	}

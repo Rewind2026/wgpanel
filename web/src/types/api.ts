@@ -23,6 +23,8 @@ export interface User {
 export interface Session {
   accessToken: string
   expiresIn: number
+  /** 会话空闲超时窗口（分钟，0 = 关闭），由后端 WGP_IDLE_TTL 下发。 */
+  idleMinutes?: number
   user: User
 }
 
@@ -34,6 +36,8 @@ export interface Me {
   permissions: Permission[]
   /** 部署网络形态：host | ipvlan | macvlan | managed（自管），与后端 netdriver.Mode 对应。 */
   netMode?: string
+  /** 会话空闲超时窗口（分钟，0 = 关闭），重开页面后由 /auth/me 重新同步。 */
+  idleMinutes?: number
 }
 
 export interface ServerConfig {

@@ -1,10 +1,17 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, Loader2, Zap } from 'lucide-react'
 import { ApiError } from '@/lib/api'
-import { useAuth } from '@/components/providers/AuthProvider'
+import { consumeLogoutReason, useAuth } from '@/components/providers/AuthProvider'
 import { Button } from '@/components/ui/Button'
 import { Field, Input } from '@/components/ui/Input'
+
+// 被登出的原因文案。来源:AuthProvider 在空闲踢出/会话失效时写入
+// sessionStorage 的标记,读后即焚。
+const LOGOUT_REASON_TEXT: Record<string, string> = {
+  idle: '长时间无操作，已自动退出登录',
+  expired: '登录已过期，请重新登录',
+}
 
 export function LoginPage() {
   const { login } = useAuth()
@@ -15,6 +22,12 @@ export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [logoutReason, setLogoutReason] = useState('')
+
+  useEffect(() => {
+    const reason = consumeLogoutReason()
+    if (reason) setLogoutReason(reason)
+  }, [])
 
   // 登录后回到用户原本想去的页面，而不是一律回仪表盘。
   // 只接受站内相对路径，避免被构造成外站跳转。
@@ -77,6 +90,16 @@ export function LoginPage() {
           className="glass-card hud-corners relative space-y-4 p-6 pt-7"
         >
           <p className="hud-label text-primary">// 接入终端</p>
+
+          {logoutReason && !error && (
+            <div
+              role="status"
+              className="flex items-start gap-2 border border-primary/40 bg-primary/10 px-3 py-2 text-xs text-primary/90 [clip-path:polygon(6px_0,100%_0,100%_calc(100%_-_6px),calc(100%_-_6px)_100%,0_100%,0_6px)]"
+            >
+              <span className="hud-label shrink-0 pt-0.5 text-primary">SYS</span>
+              <span className="break-words">{LOGOUT_REASON_TEXT[logoutReason] ?? logoutReason}</span>
+            </div>
+          )}
 
           <Field label="用户名" htmlFor="username">
             <Input

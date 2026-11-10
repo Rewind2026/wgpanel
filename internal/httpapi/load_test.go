@@ -109,7 +109,7 @@ func newLoadFixture(tb testing.TB, peers int) *loadFixture {
 	accountSvc := service.NewAccountService(st.UserRepo(), st.AuditRepo())
 	issuer := authn.NewTokenIssuer([]byte("0123456789abcdef0123456789abcdef"), time.Hour)
 	authSvc := service.NewAuthService(st.UserRepo(), issuer,
-		authn.NewLoginLimiter(10, time.Minute), time.Hour, time.Hour, st.AuditRepo())
+		authn.NewLoginLimiter(10, time.Minute), time.Hour, time.Hour, 0, st.AuditRepo())
 
 	if _, err := st.UserRepo().Create(ctx, &domain.User{
 		Username:     "bench",

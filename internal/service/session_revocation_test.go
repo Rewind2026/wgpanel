@@ -24,7 +24,7 @@ func TestPasswordChangeInvalidatesIssuedAccessToken(t *testing.T) {
 	t.Cleanup(func() { st.Close() })
 
 	issuer := authn.NewTokenIssuer([]byte("test-secret-for-password-change"), 15*time.Minute)
-	auth := NewAuthService(st.UserRepo(), issuer, nil, 15*time.Minute, 24*time.Hour, st.AuditRepo())
+	auth := NewAuthService(st.UserRepo(), issuer, nil, 15*time.Minute, 24*time.Hour, 0, st.AuditRepo())
 	account := NewAccountService(st.UserRepo(), st.AuditRepo())
 
 	// 面板是单人部署，没有建号入口，测试只能走仓储层造账号。

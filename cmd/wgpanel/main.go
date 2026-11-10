@@ -106,7 +106,7 @@ func run() error {
 	issuer := authn.NewTokenIssuer(jwtSecret, cfg.SessionTTL)
 	limiter := authn.NewLoginLimiter(cfg.LoginMaxAttempts, cfg.LoginLockWindow)
 	authSvc := service.NewAuthService(st.UserRepo(), issuer, limiter,
-		cfg.SessionTTL, cfg.RefreshTTL, st.AuditRepo())
+		cfg.SessionTTL, cfg.RefreshTTL, cfg.IdleTTL, st.AuditRepo())
 
 	serverSvc := service.NewServerService(st.ServerRepo(), cipher, st.AuditRepo(), cfg, nil)
 	peerSvc := service.NewPeerService(st.PeerRepo(), st.ServerRepo(), cipher,

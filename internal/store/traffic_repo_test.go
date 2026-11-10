@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Rewind2026/wgpanel/internal/domain"
 )
@@ -35,7 +36,7 @@ func TestConsumeRefreshTokenIsSingleUseUnderConcurrency(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			got, err := repo.ConsumeRefreshToken(ctx, raw)
+			got, err := repo.ConsumeRefreshToken(ctx, raw, 0)
 			if err == nil && got == id {
 				mu.Lock()
 				granted++
@@ -48,8 +49,41 @@ func TestConsumeRefreshTokenIsSingleUseUnderConcurrency(t *testing.T) {
 	if granted != 1 {
 		t.Fatalf("同一刷新令牌应只被消费一次，实际成功 %d 次", granted)
 	}
-	if _, err := repo.ConsumeRefreshToken(ctx, raw); err == nil {
+	if _, err := repo.ConsumeRefreshToken(ctx, raw, 0); err == nil {
 		t.Error("已消费的令牌再次使用应返回未授权错误")
+	}
+}
+
+func TestConsumeRefreshTokenRejectsIdle(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	repo := s.UserRepo()
+
+	user := &domain.User{Username: "owner", PasswordHash: "h", Role: domain.RoleOwner, Enabled: true}
+	id, err := repo.Create(ctx, user)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	const raw = "idle-refresh-token"
+	if err := repo.StoreRefreshToken(ctx, id, raw, nowUnix()+3600); err != nil {
+		t.Fatalf("store refresh token: %v", err)
+	}
+
+	// 把 created_at 拨回 10 分钟前,超出 1 分钟的空闲窗口。
+	// 轮换型令牌的 created_at 就是最后一次活跃续期时刻,拨回去等于
+	// 模拟「用户闲置了 10 分钟后才来续期」。
+	if _, err := s.db.Exec(`UPDATE refresh_token SET created_at = ? WHERE token_hash = ?`,
+		nowUnix()-600, HashToken(raw)); err != nil {
+		t.Fatalf("backdate created_at: %v", err)
+	}
+
+	if _, err := repo.ConsumeRefreshToken(ctx, raw, time.Minute); err == nil {
+		t.Error("空闲超窗的刷新令牌应被拒绝")
+	}
+	// 空闲拒绝不应销毁令牌:登出(idleTTL=0)是显式动作,仍要能消费成功
+	// 并留下审计。这里顺便验证关闭检查(0)时的行为。
+	if _, err := repo.ConsumeRefreshToken(ctx, raw, 0); err != nil {
+		t.Errorf("idleTTL=0 时同一令牌应可消费, err = %v", err)
 	}
 }
 
@@ -66,10 +100,10 @@ func TestConsumeRefreshTokenRejectsExpiredAndUnknown(t *testing.T) {
 	if err := repo.StoreRefreshToken(ctx, id, "expired", nowUnix()-10); err != nil {
 		t.Fatalf("store expired token: %v", err)
 	}
-	if _, err := repo.ConsumeRefreshToken(ctx, "expired"); err == nil {
+	if _, err := repo.ConsumeRefreshToken(ctx, "expired", 0); err == nil {
 		t.Error("过期令牌不应被接受")
 	}
-	if _, err := repo.ConsumeRefreshToken(ctx, "never-issued"); err == nil {
+	if _, err := repo.ConsumeRefreshToken(ctx, "never-issued", 0); err == nil {
 		t.Error("未知令牌不应被接受")
 	}
 }

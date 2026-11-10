@@ -282,7 +282,7 @@ func TestLastOwnerProtection(t *testing.T) {
 func TestResetPasswordRevokesSessions(t *testing.T) {
 	svc, st := newUserServiceForTest(t)
 	issuer := authn.NewTokenIssuer([]byte("test-secret-for-user-service"), 15*time.Minute)
-	auth := NewAuthService(st.UserRepo(), issuer, nil, 15*time.Minute, 24*time.Hour, st.AuditRepo())
+	auth := NewAuthService(st.UserRepo(), issuer, nil, 15*time.Minute, 24*time.Hour, 0, st.AuditRepo())
 
 	owner := mustSeedUser(t, st, "root", domain.RoleOwner, true)
 	target := mustSeedUser(t, st, "member", domain.RoleOperator, true)
@@ -313,7 +313,7 @@ func TestResetPasswordRevokesSessions(t *testing.T) {
 func TestDisableBlocksLoginAndRevokesSessions(t *testing.T) {
 	svc, st := newUserServiceForTest(t)
 	issuer := authn.NewTokenIssuer([]byte("test-secret-for-disable"), 15*time.Minute)
-	auth := NewAuthService(st.UserRepo(), issuer, nil, 15*time.Minute, 24*time.Hour, st.AuditRepo())
+	auth := NewAuthService(st.UserRepo(), issuer, nil, 15*time.Minute, 24*time.Hour, 0, st.AuditRepo())
 
 	owner := mustSeedUser(t, st, "root", domain.RoleOwner, true)
 	target := mustSeedUser(t, st, "member", domain.RoleAdmin, true)
@@ -362,7 +362,7 @@ func TestDeleteRemovesUserAndTokens(t *testing.T) {
 	}
 	// refresh_token 对 user 是 CASCADE，删人后令牌一并清空；
 	// 否则孤儿令牌仍有被 Consume 的理论通路。
-	if _, err := st.UserRepo().ConsumeRefreshToken(t.Context(), "some-refresh-token"); err == nil {
+	if _, err := st.UserRepo().ConsumeRefreshToken(t.Context(), "some-refresh-token", 0); err == nil {
 		t.Fatal("被删用户的 refresh token 必须一并失效")
 	}
 }
@@ -374,7 +374,7 @@ func TestLoginUsernameIsCaseInsensitive(t *testing.T) {
 	svc, st := newUserServiceForTest(t)
 	issuer := authn.NewTokenIssuer([]byte("test-secret-for-case-login"), 15*time.Minute)
 	limiter := authn.NewLoginLimiter(3, 15*time.Minute)
-	auth := NewAuthService(st.UserRepo(), issuer, limiter, 15*time.Minute, 24*time.Hour, st.AuditRepo())
+	auth := NewAuthService(st.UserRepo(), issuer, limiter, 15*time.Minute, 24*time.Hour, 0, st.AuditRepo())
 
 	owner := mustSeedUser(t, st, "root", domain.RoleOwner, true)
 	if _, err := svc.Create(t.Context(), CreateUserRequest{

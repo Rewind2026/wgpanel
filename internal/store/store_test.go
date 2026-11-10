@@ -233,14 +233,14 @@ func TestRefreshTokenIsSingleUse(t *testing.T) {
 		t.Fatalf("StoreRefreshToken: %v", err)
 	}
 
-	uid, err := repo.ConsumeRefreshToken(ctx, "token-1")
+	uid, err := repo.ConsumeRefreshToken(ctx, "token-1", 0)
 	if err != nil {
 		t.Fatalf("first Consume: %v", err)
 	}
 	if uid != u.ID {
 		t.Fatalf("user id = %d, want %d", uid, u.ID)
 	}
-	if _, err := repo.ConsumeRefreshToken(ctx, "token-1"); err == nil {
+	if _, err := repo.ConsumeRefreshToken(ctx, "token-1", 0); err == nil {
 		t.Fatal("refresh token must not be reusable")
 	}
 }
