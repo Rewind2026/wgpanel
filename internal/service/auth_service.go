@@ -2,8 +2,9 @@ package service
 
 import (
 	"context"
-	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/Rewind2026/wgpanel/internal/authn"
 	"github.com/Rewind2026/wgpanel/internal/domain"
@@ -264,22 +265,32 @@ func (s *AuthService) record(ctx context.Context, actorID *int64, actorName stri
 }
 
 // ValidatePasswordStrength 校验密码强度。
+//
+// 长度按字符（rune）计，不是字节：口令可以是中文，
+// 按字节算会把「10 位中文」当成 30 位，规则名与实际口径对不上；
+// 更要命的是前端镜像按字符算，两边会给出不同结论——
+// 界面显示全部达标，提交却被服务端拒绝，用户完全无从判断错在哪。
+//
+// 「字母」按 Unicode 字母类别判定：汉字、假名、谚文算字母，
+// 数字、标点、emoji 算「其他」。emoji 归入「其他」是有意的：
+// 它本来就是符号，算成字母会让「emoji + 纯数字」这种一个字母都没有的口令
+// 混过「必须混合字母与数字或符号」这一关。
 func ValidatePasswordStrength(password, username string) error {
-	if len(password) < 10 {
+	n := utf8.RuneCountInString(password)
+	if n < 10 {
 		return domain.ErrInvalid("password must be at least 10 characters")
 	}
-	if len(password) > 128 {
+	if n > 128 {
 		return domain.ErrInvalid("password must not exceed 128 characters")
 	}
-	if strings.EqualFold(password, username) {
+	if asciiEqualFold(password, username) {
 		return domain.ErrInvalid("password must not equal username")
 	}
 	var hasLetter, hasOther bool
 	for _, r := range password {
-		switch {
-		case (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r >= 0x4e00:
+		if unicode.IsLetter(r) {
 			hasLetter = true
-		default:
+		} else {
 			hasOther = true
 		}
 	}
@@ -287,4 +298,31 @@ func ValidatePasswordStrength(password, username string) error {
 		return domain.ErrInvalid("password must mix letters with digits or symbols")
 	}
 	return nil
+}
+
+// asciiEqualFold 比较两个字符串是否在「只折叠 ASCII 大小写」的口径下相等。
+//
+// 不用 strings.EqualFold：它按 Unicode 简单折叠比较，
+// 而前端镜像只能用 JS 的折叠规则，两者在 İ 之类的字符上会得出相反结论，
+// 于是又出现「界面说达标、服务端拒绝」的口径裂缝。
+//
+// 用户名只允许 ASCII（见 validateUsername），因此只折 ASCII 已经足够，
+// 也与 domain.CanonicalUsername 的口径保持一致。
+func asciiEqualFold(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := 0; i < len(a); i++ {
+		x, y := a[i], b[i]
+		if x >= 'A' && x <= 'Z' {
+			x += 'a' - 'A'
+		}
+		if y >= 'A' && y <= 'Z' {
+			y += 'a' - 'A'
+		}
+		if x != y {
+			return false
+		}
+	}
+	return true
 }

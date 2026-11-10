@@ -7,6 +7,7 @@ export type Permission =
   | 'config:export' | 'config:import'
   | 'audit:read'
   | 'settings:write' | 'system:shutdown'
+  | 'user:manage'
 
 export interface User {
   id: number

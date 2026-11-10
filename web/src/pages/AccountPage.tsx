@@ -3,12 +3,14 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { Eye, EyeOff, KeyRound, Loader2, UserCog } from 'lucide-react'
 import { ApiError, api } from '@/lib/api'
 import { roleLabel } from '@/lib/permissions'
+import { passwordSatisfiesAll } from '@/lib/password'
 import { formatRelative, formatTime } from '@/lib/utils'
 import { useToast } from '@/components/providers/ToastProvider'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Field, Input } from '@/components/ui/Input'
+import { PasswordRules } from '@/components/ui/PasswordRules'
 
 /**
  * 账号页：单人部署下的「我自己」。
@@ -164,6 +166,7 @@ export function AccountPage() {
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
+              <PasswordRules password={password} username={profileQuery.data?.username} />
             </Field>
 
             <Field label="确认新密码" htmlFor="confirm-password">
@@ -178,7 +181,10 @@ export function AccountPage() {
               />
             </Field>
 
-            <Button type="submit" disabled={changeMutation.isPending}>
+            <Button
+              type="submit"
+              disabled={changeMutation.isPending || !passwordSatisfiesAll(password, profile?.username)}
+            >
               {changeMutation.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (

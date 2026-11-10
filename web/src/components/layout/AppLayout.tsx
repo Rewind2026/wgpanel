@@ -12,6 +12,7 @@ import {
   Settings,
   UserCog,
   Users,
+  UsersRound,
   X,
   Zap,
 } from 'lucide-react'
@@ -43,6 +44,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/monitor', label: '实时监控', code: 'LIVE', icon: Activity, permission: 'metrics:read' },
   { to: '/settings', label: '服务端设置', code: 'CONF', icon: Settings, permission: 'server:read' },
   { to: '/account', label: '账号', code: 'AUTH', icon: UserCog },
+  { to: '/users', label: '账号管理', code: 'RBAC', icon: UsersRound, permission: 'user:manage' },
   { to: '/audit', label: '审计日志', code: 'LOG', icon: ScrollText, permission: 'audit:read' },
   { to: '/system', label: '系统运维', code: 'SYS', icon: Server, permission: 'settings:write' },
 ]

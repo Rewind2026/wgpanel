@@ -18,6 +18,7 @@ const SettingsPage = lazy(() => import('@/pages/SettingsPage').then((m) => ({ de
 const AccountPage = lazy(() => import('@/pages/AccountPage').then((m) => ({ default: m.AccountPage })))
 const AuditPage = lazy(() => import('@/pages/AuditPage').then((m) => ({ default: m.AuditPage })))
 const SystemPage = lazy(() => import('@/pages/SystemPage').then((m) => ({ default: m.SystemPage })))
+const UsersPage = lazy(() => import('@/pages/UsersPage').then((m) => ({ default: m.UsersPage })))
 
 /** 全屏加载态，避免路由守卫与懒加载期间闪现空页面。 */
 function FullScreenLoader() {
@@ -132,6 +133,14 @@ export function App() {
           element={
             <Guarded>
               <AccountPage />
+            </Guarded>
+          }
+        />
+        <Route
+          path="users"
+          element={
+            <Guarded permission="user:manage">
+              <UsersPage />
             </Guarded>
           }
         />

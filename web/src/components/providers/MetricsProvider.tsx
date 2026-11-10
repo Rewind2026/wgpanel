@@ -66,6 +66,11 @@ export function MetricsProvider({ children }: { children: React.ReactNode }) {
     // 换票是异步的，连接建立前必须有这个闸门：
     // 否则连续失败时会并发发起多个 EventSource。
     let connecting = false
+    // 换票请求的中止器。组件卸载时主动 abort：
+    // 否则导航会由浏览器单方面掐断 fetch，各引擎都会在控制台留一条红色报错
+    // （Chromium: net::ERR_ABORTED，WebKit: "due to access control checks"），
+    // 后者尤其容易被误读成 CORS 配置错误。
+    let ticketAbort: AbortController | null = null
 
     const scheduleReconnect = () => {
       if (disposed || retryTimer) return
@@ -84,7 +89,12 @@ export function MetricsProvider({ children }: { children: React.ReactNode }) {
       if (disposed || connecting) return
       connecting = true
       try {
-        const { ticket } = await api.streamTicket()
+        // 每次换票用独立的中止器，cleanup 里能精准掐掉进行中的那次。
+        ticketAbort?.abort()
+        const ac = new AbortController()
+        ticketAbort = ac
+
+        const { ticket } = await api.streamTicket(ac.signal)
         if (disposed) return
 
         // 票据是一次性的，连上之后立刻作废；这里不保留引用。
@@ -143,7 +153,9 @@ export function MetricsProvider({ children }: { children: React.ReactNode }) {
           if (source === es) source = null
           scheduleReconnect()
         }
-      } catch {
+      } catch (err) {
+        // 主动中止（组件卸载）不是故障：既不该退避重连，也不该产生控制台报错。
+        if (err instanceof DOMException && err.name === 'AbortError') return
         // 换票失败通常是会话过期。仍然退避重试：
         // AuthProvider 会并行把界面切回登录页。
         scheduleReconnect()
@@ -157,6 +169,10 @@ export function MetricsProvider({ children }: { children: React.ReactNode }) {
     return () => {
       disposed = true
       if (retryTimer) clearTimeout(retryTimer)
+      // 先中止进行中的换票，再关流。
+      // 顺序反了的话，fetch 会在页面卸载后被浏览器掐断并留下红色报错。
+      ticketAbort?.abort()
+      ticketAbort = null
       source?.close()
       source = null
       setConnected(false)

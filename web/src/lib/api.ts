@@ -9,6 +9,7 @@ import type {
   PageResult,
   Peer,
   PeerStats,
+  Role,
   ServerConfig,
   ServerRevision,
   Session,
@@ -287,13 +288,27 @@ export const api = {
   /**
    * 账号接口只管「我自己」。
    *
-   * 面板是单人部署，没有建号、删号与角色分配，
-   * 所以这里没有 userId 参数——目标账号一律取自登录态。
+   * 建号、删号与角色分配在 /users（user:manage 权限），
+   * 这里没有 userId 参数——目标账号一律取自登录态。
    */
   getProfile: (signal?: AbortSignal) => request<User>('/account/profile', { signal }),
 
   changePassword: (password: string) =>
     request<{ changed: boolean }>('/account/password', { method: 'PUT', body: { password } }),
+
+  /** 账号管理（owner/admin）：列表、建号、改角色/启停、重置密码、删除。 */
+  listUsers: (signal?: AbortSignal) => request<User[]>('/users', { signal }),
+
+  createUser: (payload: { username: string; email?: string; password: string; role: Role }) =>
+    request<User>('/users', { method: 'POST', body: payload }),
+
+  updateUser: (id: number, payload: { role?: Role; enabled?: boolean }) =>
+    request<{ updated: boolean }>(`/users/${id}`, { method: 'PUT', body: payload }),
+
+  resetUserPassword: (id: number, password: string) =>
+    request<{ reset: boolean }>(`/users/${id}/reset-password`, { method: 'POST', body: { password } }),
+
+  deleteUser: (id: number) => request<{ deleted: boolean }>(`/users/${id}`, { method: 'DELETE' }),
 
   /**
    * streamTicket 换取 SSE 连接票据。
@@ -301,8 +316,18 @@ export const api = {
    * EventSource 构造器不接受自定义请求头，所以监控页没法像其他
    * 接口那样直接带 Authorization 换取推送流。票据是 60 秒有效、
    * 一次性消费的随机串，泄露到访问日志里也无法重放。
+   *
+   * signal 允许调用方在组件卸载时主动中止。
+   * 不主动中止的话，页面导航会由浏览器单方面掐断这个 fetch，
+   * 各引擎会在控制台留下一条红色报错：
+   * Chromium 报 net::ERR_ABORTED，WebKit 报
+   * 「Fetch API cannot load ... due to access control checks」——
+   * 后者的措辞会让人误以为是 CORS 配置错误。
+   * 主动 abort 走的是 AbortError 分支，不产生这类噪音。
    */
-  streamTicket: () => request<{ ticket: string; expiresIn: number }>('/auth/stream-ticket', {
-    method: 'POST',
-  }),
+  streamTicket: (signal?: AbortSignal) =>
+    request<{ ticket: string; expiresIn: number }>('/auth/stream-ticket', {
+      method: 'POST',
+      signal,
+    }),
 }
