@@ -299,6 +299,13 @@ func (s *Service) Restore(ctx context.Context, filename string) error {
 				}
 			}
 		}
+		// 恢复出来的用户名要重新归一成小写。
+		// 备份里存的是当时的原样值：老版本的用户名可能是 "Admin"，
+		// 原样写回就等于绕过了建号路径的归一化，
+		// 审计日志里同一个账号又会冒出两种写法。
+		if _, err := tx.ExecContext(ctx, store.NormalizeUsernameCaseSQL); err != nil {
+			return fmt.Errorf("backup: normalize usernames: %w", err)
+		}
 		return nil
 	})
 }

@@ -112,6 +112,7 @@ func run() error {
 	peerSvc := service.NewPeerService(st.PeerRepo(), st.ServerRepo(), cipher,
 		st.AuditRepo(), active, nil)
 	accountSvc := service.NewAccountService(st.UserRepo(), st.AuditRepo())
+	userSvc := service.NewUserService(st.UserRepo(), st.AuditRepo())
 
 	// 事件总线是进程内唯一的出口：SSE 实时推送挂在它上面，
 	// 新增事件发布点时不需要同时改推送与其他消费链路。
@@ -144,8 +145,10 @@ func run() error {
 		return err
 	}
 	if generated != "" {
+		// 打印落库后的真实用户名：用户名按小写规范形式存储，
+		// 照抄配置里的原值会与实际账号对不上。
 		log.Warn("initial administrator created — this password is shown only once",
-			"username", cfg.AdminUsername, "password", generated)
+			"username", domain.CanonicalUsername(cfg.AdminUsername), "password", generated)
 	}
 
 	endpoint := func(ctx context.Context) string {
@@ -181,6 +184,7 @@ func run() error {
 		Store:                st,
 		Auth:                 authSvc,
 		Account:              accountSvc,
+		Users:                userSvc,
 		Servers:              serverSvc,
 		Peers:                peerSvc,
 		Collector:            collector,

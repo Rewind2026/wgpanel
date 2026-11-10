@@ -142,6 +142,42 @@ func TestBackupRoundTripPreservesSecretsAndHistory(t *testing.T) {
 	}
 }
 
+// 恢复旧备份时，用户名要重新归一成小写。
+//
+// 备份里存的是当时的原样值：老版本的用户名可能是 "Admin"。
+// 原样写回等于绕过建号路径的归一化，审计日志里同一个账号又会冒出两种写法。
+func TestRestoreNormalizesUsernameCase(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+
+	// 造一份含大写用户名的备份：先直接写库，绕过建号路径的归一化，
+	// 模拟「备份来自旧版本」的状态。
+	if _, err := f.store.DB().ExecContext(ctx,
+		`INSERT INTO user (username, email, password_hash, role, enabled, created_at, updated_at)
+		 VALUES ('Legacy-Owner', '', 'hash', 'owner', 1, 1, 1)`); err != nil {
+		t.Fatalf("seed legacy user: %v", err)
+	}
+	rec, err := f.svc.Create(ctx, "manual", nil)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	// 恢复前先破坏数据，确保恢复确实走了写回路径。
+	if _, err := f.store.DB().ExecContext(ctx, `DELETE FROM user`); err != nil {
+		t.Fatalf("delete user: %v", err)
+	}
+	if err := f.svc.Restore(ctx, rec.Filename); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+
+	var name string
+	if err := f.store.DB().QueryRowContext(ctx, `SELECT username FROM user WHERE id = 1`).Scan(&name); err != nil {
+		t.Fatalf("read restored username: %v", err)
+	}
+	if name != "legacy-owner" {
+		t.Errorf("恢复后的用户名应归一成小写，实际 %q", name)
+	}
+}
+
 func TestRestoreKeepsTrafficHistory(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)

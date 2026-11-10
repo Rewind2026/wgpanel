@@ -30,7 +30,7 @@
 | 监控 | 无 / 仅 `wg show` | SSE 实时推送：CPU/内存/磁盘/网络 IO、隧道总吞吐、每 Peer 握手时间、上下行字节、在线状态、连接时长、IP 分配、历史曲线（1h/24h/7d/30d） |
 | 部署 | 依赖 `NET_ADMIN` + 手动配置 | 单命令：`docker run -d --network host -v wgp-data:/data --cap-add=NET_ADMIN --device /dev/net/tun -e WGP_NATIVE_MODE=host ghcr.io/rewind2026/wgpanel:latest` |
 | 网络模式 | 多数强制 host 网络 | **三种部署模式**：host 共享宿主栈；ipvlan / macvlan 直挂物理二层、IPv6 由路由器 RA/SLAAC 下发。原 bridge 模式已移除——RA 到不了 bridge 容器，IPv6 无法直连 |
-| 账号 | 无 / 单用户密码 | 单账号模型：首个 owner 由 `WGP_ADMIN_USERNAME` / `WGP_ADMIN_PASSWORD` 初始化，此后只能自助改密；账号相关操作全部进审计日志 |
+| 账号 | 无 / 单用户密码 | 多账号 RBAC：首个 owner 由 `WGP_ADMIN_USERNAME` / `WGP_ADMIN_PASSWORD` 初始化；owner/admin 可建号、分配角色、启停与重置密码；用户名不区分大小写；账号相关操作全部进审计日志 |
 | 配置持久化 | wg0.conf 覆盖式 | SQLite 事务化存储 + 自动生成 wg 配置 + 配置版本历史与回滚 |
 
 ### 1.2 非功能指标（SLO）
@@ -470,7 +470,7 @@ CREATE TABLE peer (
 
 CREATE TABLE user (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  username      TEXT NOT NULL UNIQUE,
+  username      TEXT NOT NULL UNIQUE,                          -- 归一为小写；大小写不敏感
   email         TEXT NOT NULL DEFAULT '',
   password_hash TEXT NOT NULL,                                 -- argon2id
   role          TEXT NOT NULL DEFAULT 'viewer',                -- owner/admin/operator/viewer
@@ -664,20 +664,25 @@ ALTER TABLE peer ADD COLUMN quota_period_start INTEGER NOT NULL DEFAULT 0;
 
 采用 **RBAC（Role-Based Access Control）** 而非细粒度 ACL：角色数量少、权限边界清晰、易审计、易维护，符合本项目「自托管单实例」的场景。
 
-但当前是**单账号部署**：账号只有一个，角色矩阵与权限点保留下来是为了让
-「多账号」这件事将来需要时不必重做鉴权，运行时的实际效果是「owner 全权限」。
+面板支持多账号：owner 与 admin 可在账号管理页建号、改角色、启停与重置密码。
 
 ### 6.2 角色定义
 
 | 角色 | 说明 | 定位 |
 |---|---|---|
-| **owner** | 唯一所有者，初始管理员 | 不可删除、不可降级 |
+| **owner** | 部署根身份，首次启动时创建 | 不可删除；最后一个启用 owner 受保护 |
+| **admin** | 除账号管理外的全部权限 | 可管理下级账号（operator / viewer） |
+| **operator** | 客户端与服务端运维 | 无审计与设置权限 |
+| **viewer** | 只读 | 仅查看仪表盘与客户端 |
 
-> 面板是**单账号部署**：没有建号、删号与角色分配，因此实际存在的账号只有 owner 一个。
-> 下面的权限矩阵仍保留 admin / operator / viewer 三档，是为了让「未来若要开多账号」
-> 时不必重做鉴权；当前界面上不存在选择角色的入口，后端也没有创建用户的接口。
-> owner 的权限集覆盖全部权限点，所以单账号部署下权限判定恒为真——它留在这里
-> 是为了让矩阵本身保持完整，而不是因为运行时真的区分四种角色。
+账号管理遵循三条硬规则：
+
+- **层级优先**：管理操作要求操作者层级高于目标；owner 管理 owner 是唯一例外。
+- **禁止自操作**：任何账号都不能改角色、停用或删除自己。
+- **owner 不产出**：建号与改角色都不允许产出 owner——否则「建新 owner 再删旧 owner」
+  就绕开了最后 owner 保护。owner 只由首次启动的 `EnsureOwner` 产生。
+
+owner 与 admin 之间的同级操作一律拒绝：admin 互删等于权限自我扩张。
 
 ### 6.3 权限矩阵
 
@@ -696,6 +701,7 @@ ALTER TABLE peer ADD COLUMN quota_period_start INTEGER NOT NULL DEFAULT 0;
 | `audit:read` | ✅ | ✅ | ❌ | ❌ |
 | `settings:write`（全局设置、备份策略、危险操作） | ✅ | ✅ | ❌ | ❌ |
 | `system:shutdown`（重启接口、重置全部密钥） | ✅ | ✅ | ❌ | ❌ |
+| `user:manage`（建号、角色分配、启停、重置密码、删除） | ✅ | ✅ | ❌ | ❌ |
 
 ### 6.4 认证机制
 
@@ -723,17 +729,18 @@ Cookie 的 `Secure` 标志由 `WGP_COOKIE_SECURE` 控制：面板直接走 HTTPS
 | 策略 | 实现 |
 |---|---|
 | 首个账号 | 首次启动创建 `owner`（用户名来自 `WGP_ADMIN_USERNAME`，默认 `admin`；密码来自 `WGP_ADMIN_PASSWORD`，未设置则随机生成并打印一次）。**仅在库中一个账号都没有时执行**，已有的库不再读这两个变量 |
+| 用户名规范 | **不区分大小写**：统一归一为小写存储（`Admin` 与 `admin` 是同一个账号）。建号判重与登录查询按同一口径折叠；存量库由迁移 v11 归一 |
 | 密码强度 | 最少 10 字符；拒绝与用户名相同 |
-| 登录限流 | 按 IP + 用户名双维度滑动窗口，阈值 `WGP_LOGIN_MAX_ATTEMPTS`（默认 5）、锁定时长 `WGP_LOGIN_LOCK_WINDOW` |
+| 登录限流 | 按 IP + 用户名双维度滑动窗口，阈值 `WGP_LOGIN_MAX_ATTEMPTS`（默认 5）、锁定时长 `WGP_LOGIN_LOCK_WINDOW`。用户名维度按归一后的形式计数，否则变换大小写即可绕过 |
 | 会话管理 | refresh token 轮换制限制会话寿命；改密提升 `token_version`，在用的 access token 立即作废 |
-| 修改自身角色 | 不适用：单账号部署，没有角色变更入口 |
+| 修改自身角色 | 禁止：任何账号都不能改自己的角色、停用或删除自己 |
 | 反向代理信任 | `WGP_TRUSTED_PROXY` 决定是否采信 `X-Forwarded-For`。**不得设为 `0.0.0.0/0`**：那等于允许任何人伪造来源 IP，登录限流随之被绕过 |
 | 前端路由守卫 | 前端 `RequirePermission` 组件做 UX 层拦截，但**真正鉴权在后端中间件**（前端仅体验优化，非安全边界） |
 | API 白名单 | `/healthz`、`/readyz`、`/metrics`、`/api/v1/version`、`/api/v1/auth/login`、`/api/v1/auth/refresh`、`/api/v1/subscription/{token}`；其余 `/api/v1/**` 均经鉴权中间件 |
 
 ### 6.6 审计
 
-所有写操作与敏感读操作（配置导出、密钥轮换、备份恢复）记录审计日志：`actor / action / resource / resource_id / detail / ip / ua / result`。拥有 `audit:read` 权限的账号可在审计页按操作类型、操作者、时间范围、资源检索，并导出 CSV（`GET /api/v1/audit/export`）；单账号部署下即 owner 本人。
+所有写操作与敏感读操作（配置导出、密钥轮换、备份恢复）记录审计日志：`actor / action / resource / resource_id / detail / ip / ua / result`。拥有 `audit:read` 权限的账号可在审计页按操作类型、操作者、时间范围、资源检索，并导出 CSV（`GET /api/v1/audit/export`）。账号相关操作（建号、改角色、启停、重置密码、删号）同样入审计，`resource = user`、`resource_id = 用户名`。
 
 ---
 

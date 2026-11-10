@@ -186,6 +186,41 @@ func TestUserRepoCreateAndLookup(t *testing.T) {
 	}
 }
 
+// TestUserRepoUsernameIsCaseInsensitive 验证用户名的大小写不敏感语义。
+//
+// 这条规则落在 DB 层面才有效：应用层做判重会漏掉并发窗口，
+// 而库里若同时存在 "Admin" 与 "admin"，登录到底命中哪一个是不确定的。
+func TestUserRepoUsernameIsCaseInsensitive(t *testing.T) {
+	ctx := context.Background()
+	repo := newTestStore(t).UserRepo()
+
+	u := &domain.User{
+		Username: "Admin", PasswordHash: "hash", Role: domain.RoleOwner, Enabled: true,
+	}
+	if _, err := repo.Create(ctx, u); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// 大小写变体不得成为第二个账号。
+	for _, variant := range []string{"admin", "ADMIN", "aDmIn"} {
+		dup := &domain.User{Username: variant, PasswordHash: "x", Role: domain.RoleViewer, Enabled: true}
+		if _, err := repo.Create(ctx, dup); domain.AsError(err).Code != domain.CodeConflict {
+			t.Fatalf("大小写变体 %q 应判为重复用户名，实际 %v", variant, err)
+		}
+	}
+
+	// 查找同样不区分大小写，否则改了大小写就登不进自己的账号。
+	for _, variant := range []string{"Admin", "admin", "ADMIN"} {
+		found, err := repo.GetByUsername(ctx, variant)
+		if err != nil {
+			t.Fatalf("GetByUsername(%q): %v", variant, err)
+		}
+		if found.ID != u.ID {
+			t.Fatalf("GetByUsername(%q) 命中了错误的账号 %d，期望 %d", variant, found.ID, u.ID)
+		}
+	}
+}
+
 func TestRefreshTokenIsSingleUse(t *testing.T) {
 	ctx := context.Background()
 	repo := newTestStore(t).UserRepo()

@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // Role 定义系统角色。
 type Role string
@@ -41,6 +44,7 @@ const (
 	PermAuditRead      Permission = "audit:read"
 	PermSettingsWrite  Permission = "settings:write"
 	PermSystemShutdown Permission = "system:shutdown"
+	PermUserManage     Permission = "user:manage"
 )
 
 // rolePermissions 是权限矩阵的唯一事实来源。
@@ -52,6 +56,7 @@ var rolePermissions = map[Role][]Permission{
 		PermConfigExport, PermConfigImport,
 		PermAuditRead,
 		PermSettingsWrite, PermSystemShutdown,
+		PermUserManage,
 	},
 	RoleAdmin: {
 		PermServerRead, PermServerWrite,
@@ -60,6 +65,7 @@ var rolePermissions = map[Role][]Permission{
 		PermConfigExport, PermConfigImport,
 		PermAuditRead,
 		PermSettingsWrite, PermSystemShutdown,
+		PermUserManage,
 	},
 	RoleOperator: {
 		PermServerRead, PermServerWrite,
@@ -74,6 +80,28 @@ var rolePermissions = map[Role][]Permission{
 
 // Permissions 返回角色的权限集合。
 func (r Role) Permissions() []Permission { return rolePermissions[r] }
+
+// CanonicalUsername 返回用户名的规范形式：去首尾空白 + 折叠 ASCII 大小写。
+//
+// 用户名不区分大小写：Admin 与 admin 指向同一个账号。
+// 否则两者可以并存，审计日志里会出现两条肉眼分不出来的记录，
+// 「谁改了配置」这类问题也就永远说不清。
+//
+// 只折叠 ASCII，与 SQLite 的 lower() 语义一致：
+// Go 侧算出的「相等」必须与库里查得到的那一行是同一个判定，
+// 两边口径不一致时，限流桶与查重结果会对不上。
+//
+// 这是用户名的唯一归一入口：建号、登录、限流键、落库共用同一份口径。
+func CanonicalUsername(s string) string {
+	s = strings.TrimSpace(s)
+	b := []byte(s)
+	for i := range b {
+		if b[i] >= 'A' && b[i] <= 'Z' {
+			b[i] += 'a' - 'A'
+		}
+	}
+	return string(b)
+}
 
 // Has 判断角色是否拥有指定权限。
 func (r Role) Has(p Permission) bool {

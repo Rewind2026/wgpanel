@@ -44,6 +44,10 @@ func (s *AuthService) EnsureOwner(ctx context.Context, username, password string
 		return "", nil
 	}
 
+	// 根身份同样按规范形式落库：用户名不区分大小写，
+	// 首个 owner 也不例外，否则它会成为库里唯一能靠大小写「变体」的身份。
+	username = domain.CanonicalUsername(username)
+
 	initialPassword := password
 	if initialPassword == "" {
 		generated, err := authn.RandomToken(12)
@@ -84,6 +88,12 @@ type LoginRequest struct {
 
 // Login 校验凭据并签发令牌对。
 func (s *AuthService) Login(ctx context.Context, req LoginRequest) (*domain.Session, error) {
+	// 用户名不区分大小写，凭据校验也按同一口径走：
+	// 库里存的是 "Admin"，用 "admin" 登录必须命中同一个账号。
+	// 这一步必须在限流之前完成——限流桶用原样用户名做键的话，
+	// 同一个账号会有若干个桶，攻击者靠变换大小写就能绕过按用户的限流。
+	req.Username = domain.CanonicalUsername(req.Username)
+
 	if s.limiter != nil {
 		for _, key := range []string{"ip:" + req.IP, "user:" + req.Username} {
 			if !s.limiter.Allow(key) {

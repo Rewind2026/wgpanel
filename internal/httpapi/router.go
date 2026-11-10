@@ -35,6 +35,7 @@ type Deps struct {
 	Store     *store.Store
 	Auth      *service.AuthService
 	Account   *service.AccountService
+	Users     *service.UserService
 	Servers   *service.ServerService
 	Peers     *service.PeerService
 	Collector *monitor.Collector
@@ -75,6 +76,7 @@ type Server struct {
 	store         *store.Store
 	auth          *service.AuthService
 	account       *service.AccountService
+	users         *service.UserService
 	servers       *service.ServerService
 	peers         *service.PeerService
 	collector     *monitor.Collector
@@ -108,6 +110,7 @@ func New(d Deps) *Server {
 		store:         d.Store,
 		auth:          d.Auth,
 		account:       d.Account,
+		users:         d.Users,
 		servers:       d.Servers,
 		peers:         d.Peers,
 		collector:     d.Collector,
@@ -136,6 +139,12 @@ func New(d Deps) *Server {
 	// 与其运行时 panic，不如在装配阶段就暴露。
 	if s.tickets == nil {
 		s.tickets = authn.NewStreamTicketStore()
+	}
+	// 账号管理是可选能力：未装配时整组路由不注册。
+	// 少了依赖却在请求期 panic，比功能缺席更难排查——
+	// 装配漏项应该在装配期就被看见。
+	if s.users == nil {
+		s.log.Warn("account management disabled: user service not configured")
 	}
 	return s
 }
@@ -218,13 +227,28 @@ func (s *Server) Handler() http.Handler {
 				r.With(requirePerm(domain.PermConfigExport, s.log)).Delete("/{id}/subscription", s.handleRevokeSubscription)
 			})
 
-			// 单人部署：不提供建号、删号与角色分配。
-			// 这里只挂两件事——读自己的资料、改自己的密码，
+			// 自助入口：读自己的资料、改自己的密码，
 			// 身份一律取自请求 principal，请求体里没有 userId。
+			// 「管别人」的建号、角色分配与删除在 /users，走 user:manage 权限。
 			r.Route("/account", func(r chi.Router) {
 				r.Get("/profile", s.handleGetProfile)
 				r.Put("/password", s.handleChangePassword)
 			})
+
+			// 账号管理：owner/admin 专属。业务规则（层级、自我保护、
+			// 最后 owner 保护）在 UserService，中间件只挡权限点。
+			// 未装配 UserService 时整组不注册：路由指向空依赖，
+			// 请求期只会得到一个语焉不详的 500。
+			if s.users != nil {
+				r.Route("/users", func(r chi.Router) {
+					r.Use(requirePerm(domain.PermUserManage, s.log))
+					r.Get("/", s.handleListUsers)
+					r.Post("/", s.handleCreateUser)
+					r.Put("/{id}", s.handleUpdateUser)
+					r.Post("/{id}/reset-password", s.handleResetUserPassword)
+					r.Delete("/{id}", s.handleDeleteUser)
+				})
+			}
 
 			// 读也要鉴权。设置里含备份目录、出口地址、策略开关等运行参数，
 			// 泄漏本身不致命，但与同级的 /backups 要求 settings:write 不一致——

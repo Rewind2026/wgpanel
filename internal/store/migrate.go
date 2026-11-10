@@ -27,6 +27,7 @@ var migrations = []migration{
 	{version: 8, name: "user_token_version", stmts: splitStatements(schemaV8)},
 	{version: 9, name: "drop_api_token", stmts: splitStatements(schemaV9)},
 	{version: 10, name: "drop_webhook", stmts: splitStatements(schemaV10)},
+	{version: 11, name: "user_username_case", stmts: splitStatements(schemaV11)},
 }
 
 // splitStatements 以分号拆分多语句 DDL。

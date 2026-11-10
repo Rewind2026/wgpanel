@@ -20,6 +20,10 @@ const (
 	AuditConfigExport   AuditAction = "config.export"
 	// AuditPasswordChange 记录当前账号自助修改密码。
 	AuditPasswordChange AuditAction = "user.password_change"
+	AuditUserCreate     AuditAction = "user.create"
+	AuditUserUpdate     AuditAction = "user.update"
+	AuditUserDelete     AuditAction = "user.delete"
+	AuditUserResetPw    AuditAction = "user.reset_password"
 	AuditSettingsUpdate AuditAction = "settings.update"
 	AuditBackupCreate   AuditAction = "backup.create"
 	AuditRestoreApply   AuditAction = "restore.apply"

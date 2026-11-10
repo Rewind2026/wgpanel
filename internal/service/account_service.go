@@ -53,9 +53,9 @@ func (s *AccountService) ChangePassword(ctx context.Context, id int64, newPasswo
 	// 服务端不留存它的任何记录，吊销 refresh 只能挡住「续期」，
 	// 挡不住「已经签发、还没过期」的那一张——怀疑凭据泄露时，
 	// 攻击者手里的 access token 还能继续用满一个会话 TTL（默认 15 分钟）。
-	// 故这里同步提升 token_version，让此前签发的 access token 一并作废。
-	u.TokenVersion++
-
+	// 故 UpdatePassword 同步自增 token_version，让此前签发的 access token 一并作废。
+	// 自增在 SQL 里完成而不是在这里「读到值 +1」：并发改密时陈旧绝对值
+	// 可能把会话代号写回低位，反而让已作废的令牌复活。
 	if err := s.users.UpdatePassword(ctx, u); err != nil {
 		return err
 	}

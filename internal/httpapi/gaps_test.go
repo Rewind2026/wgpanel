@@ -306,6 +306,7 @@ func newTestEnv(t *testing.T, setReconcile func(time.Duration)) *testEnv {
 			Store:     st,
 			Auth:      authSvc,
 			Account:   service.NewAccountService(st.UserRepo(), st.AuditRepo()),
+			Users:     service.NewUserService(st.UserRepo(), st.AuditRepo()),
 			Servers:   srvSvc,
 			Peers:     peerSvc,
 			Collector: monitor.New(nil, nil, st.TrafficRepo(), time.Second, log),
@@ -355,6 +356,20 @@ func (e *testEnv) do(t *testing.T, method, path string, role domain.Role,
 	req := httptest.NewRequest(method, path, reader)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+e.token(t, role))
+	rec := httptest.NewRecorder()
+	e.server.Handler().ServeHTTP(rec, req)
+	return rec
+}
+
+// login 走完整登录接口，不带鉴权头。
+func (e *testEnv) login(t *testing.T, username, password string) *httptest.ResponseRecorder {
+	t.Helper()
+	raw, err := json.Marshal(map[string]any{"username": username, "password": password})
+	if err != nil {
+		t.Fatalf("marshal login body: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	e.server.Handler().ServeHTTP(rec, req)
 	return rec

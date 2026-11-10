@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"testing"
+
+	"github.com/Rewind2026/wgpanel/internal/domain"
 )
 
 // TestMigrationDropsFakeCryptoColumn 验证 v4 迁移能把旧库里的 private_key_algorithm 删除。
@@ -203,6 +205,139 @@ INSERT INTO traffic_sample (ts, peer_id, rx_bytes, tx_bytes)
 	}
 	if tokenVersion != 0 {
 		t.Errorf("token_version 默认值应为 0，实际 %d", tokenVersion)
+	}
+}
+
+// TestMigrationNormalizesUsernameCase 验证 v11 迁移把存量用户名归一成小写。
+//
+// 首个 owner 的用户名来自 WGP_ADMIN_USERNAME，原样落库；
+// 不归一的话，审计日志里同一个账号会有「Admin」与「admin」两种写法。
+func TestMigrationNormalizesUsernameCase(t *testing.T) {
+	ctx := context.Background()
+	raw, err := sqlOpenMemory()
+	if err != nil {
+		t.Fatalf("open memory sqlite: %v", err)
+	}
+	t.Cleanup(func() { raw.Close() })
+
+	legacy := `
+CREATE TABLE user (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  username      TEXT    NOT NULL UNIQUE,
+  email         TEXT    NOT NULL DEFAULT '',
+  password_hash TEXT    NOT NULL,
+  role          TEXT    NOT NULL DEFAULT 'viewer',
+  enabled       INTEGER NOT NULL DEFAULT 1,
+  last_login_at INTEGER,
+  created_at    INTEGER NOT NULL,
+  updated_at    INTEGER NOT NULL,
+  token_version INTEGER NOT NULL DEFAULT 0
+);
+INSERT INTO user (username, password_hash, role, created_at, updated_at)
+  VALUES ('Legacy-Owner', 'hash', 'owner', 1, 1);
+INSERT INTO user (username, password_hash, role, created_at, updated_at)
+  VALUES ('OpsTeam', 'hash', 'operator', 1, 1);
+CREATE TABLE schema_migration (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at INTEGER NOT NULL);
+INSERT INTO schema_migration (version, name, applied_at) VALUES (1, 'init', 1);
+INSERT INTO schema_migration (version, name, applied_at) VALUES (2, 'indexes', 1);
+INSERT INTO schema_migration (version, name, applied_at) VALUES (3, 'traffic', 1);
+INSERT INTO schema_migration (version, name, applied_at) VALUES (4, 'drop_fake_crypto_option', 1);
+INSERT INTO schema_migration (version, name, applied_at) VALUES (5, 'policy_and_ops', 1);
+INSERT INTO schema_migration (version, name, applied_at) VALUES (6, 'quota_period_start', 1);
+INSERT INTO schema_migration (version, name, applied_at) VALUES (7, 'traffic_sample_indexes', 1);
+INSERT INTO schema_migration (version, name, applied_at) VALUES (8, 'user_token_version', 1);
+INSERT INTO schema_migration (version, name, applied_at) VALUES (9, 'drop_api_token', 1);
+INSERT INTO schema_migration (version, name, applied_at) VALUES (10, 'drop_webhook', 1);
+`
+	if _, err := raw.Exec(legacy); err != nil {
+		t.Fatalf("build legacy schema: %v", err)
+	}
+
+	s := NewWithDB(raw)
+	if err := s.migrate(ctx); err != nil {
+		t.Fatalf("migrate legacy database: %v", err)
+	}
+
+	for _, want := range []string{"legacy-owner", "opsteam"} {
+		var got string
+		if err := raw.QueryRow(`SELECT username FROM user WHERE username = ?`, want).Scan(&got); err != nil {
+			t.Errorf("迁移后应存在用户名 %q：%v", want, err)
+		}
+	}
+	var n int
+	if err := raw.QueryRow(
+		`SELECT COUNT(*) FROM user WHERE username <> lower(username)`).Scan(&n); err != nil {
+		t.Fatalf("检查大小写残留：%v", err)
+	}
+	if n != 0 {
+		t.Errorf("迁移后不应残留大写用户名，实际 %d 行", n)
+	}
+}
+
+// TestMigrationToleratesCaseCollisionUsers 验证大小写冲突的存量数据不会让迁移失败。
+//
+// 冲突组只能来自手工改库或更老的备份。归一它们会撞上 UNIQUE 约束，
+// 整条迁移失败意味着面板直接起不来——宁可保持原样，
+// 由 GetByUsername 明确报歧义，也不能拿启动失败换「数据好看」。
+func TestMigrationToleratesCaseCollisionUsers(t *testing.T) {
+	ctx := context.Background()
+	raw, err := sqlOpenMemory()
+	if err != nil {
+		t.Fatalf("open memory sqlite: %v", err)
+	}
+	t.Cleanup(func() { raw.Close() })
+
+	legacy := `
+CREATE TABLE user (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  username      TEXT    NOT NULL UNIQUE,
+  email         TEXT    NOT NULL DEFAULT '',
+  password_hash TEXT    NOT NULL,
+  role          TEXT    NOT NULL DEFAULT 'viewer',
+  enabled       INTEGER NOT NULL DEFAULT 1,
+  last_login_at INTEGER,
+  created_at    INTEGER NOT NULL,
+  updated_at    INTEGER NOT NULL,
+  token_version INTEGER NOT NULL DEFAULT 0
+);
+INSERT INTO user (username, password_hash, role, created_at, updated_at)
+  VALUES ('Dup', 'hash', 'owner', 1, 1);
+INSERT INTO user (username, password_hash, role, created_at, updated_at)
+  VALUES ('dup', 'hash', 'viewer', 1, 1);
+CREATE TABLE schema_migration (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at INTEGER NOT NULL);
+INSERT INTO schema_migration (version, name, applied_at) VALUES (1, 'init', 1);
+INSERT INTO schema_migration (version, name, applied_at) VALUES (2, 'indexes', 1);
+INSERT INTO schema_migration (version, name, applied_at) VALUES (3, 'traffic', 1);
+INSERT INTO schema_migration (version, name, applied_at) VALUES (4, 'drop_fake_crypto_option', 1);
+INSERT INTO schema_migration (version, name, applied_at) VALUES (5, 'policy_and_ops', 1);
+INSERT INTO schema_migration (version, name, applied_at) VALUES (6, 'quota_period_start', 1);
+INSERT INTO schema_migration (version, name, applied_at) VALUES (7, 'traffic_sample_indexes', 1);
+INSERT INTO schema_migration (version, name, applied_at) VALUES (8, 'user_token_version', 1);
+INSERT INTO schema_migration (version, name, applied_at) VALUES (9, 'drop_api_token', 1);
+INSERT INTO schema_migration (version, name, applied_at) VALUES (10, 'drop_webhook', 1);
+`
+	if _, err := raw.Exec(legacy); err != nil {
+		t.Fatalf("build legacy schema: %v", err)
+	}
+
+	s := NewWithDB(raw)
+	if err := s.migrate(ctx); err != nil {
+		t.Fatalf("大小写冲突的旧库也必须能完成迁移：%v", err)
+	}
+
+	// 冲突组保持原样，不能被悄悄合并成一个账号——
+	// 合并意味着有人凭空失去自己的账号与角色。
+	var n int
+	if err := raw.QueryRow(`SELECT COUNT(*) FROM user`).Scan(&n); err != nil {
+		t.Fatalf("count users: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("冲突组应原样保留两行，实际 %d 行", n)
+	}
+
+	// 歧义必须被显式报出，不能随机命中一个身份。
+	if _, err := s.UserRepo().GetByUsername(ctx, "DUP"); domain.AsError(err).Code != domain.CodeConflict {
+		t.Errorf("只差大小写的同名账号应报歧义冲突，实际 %v", err)
 	}
 }
 
