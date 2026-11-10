@@ -224,7 +224,7 @@ func run() error {
 	}
 	go scheduler.New(cfg, st, log).Start(ctx)
 	go policyEngine.Start(ctx, cfg.PolicyInterval)
-	scheduler.StartBackupLoop(ctx, st.SettingRepo(), backupSvc,
+	scheduler.StartBackupLoop(ctx, st.SettingRepo(), backupSvc, st.BackupRepo(),
 		func(ev domain.Event) { bus.Publish(ctx, ev) }, log)
 
 	errCh := make(chan error, 1)
