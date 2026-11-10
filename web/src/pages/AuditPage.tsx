@@ -267,16 +267,26 @@ export function AuditPage() {
               />
             </Field>
 
-            <div className="flex items-end gap-2">
-              <Button type="submit" className="flex-1">
-                <Search className="h-4 w-4" />
-                查询
-              </Button>
-              <Button type="button" variant="outline" onClick={reset}>
-                <RotateCcw className="h-4 w-4" />
-                重置
-              </Button>
-            </div>
+            {/*
+              查询/重置 与筛选控件保持同一水平线。
+              直接用 items-end 会把它们贴到网格行底部，而这一行的行高
+              是被日期字段下方的说明文字（含当天 00:00）撑起来的，
+              按钮因此比输入框低了一行。
+              这里改用 Field 的标签行占位，让按钮落在输入框那一行上；
+              窄屏下按钮独占一行，不需要占位，收起标签行保持紧凑。
+            */}
+            <Field label="操作" className="[&>label]:invisible max-sm:[&>label]:hidden">
+              <div className="flex gap-2">
+                <Button type="submit" className="flex-1">
+                  <Search className="h-4 w-4" />
+                  查询
+                </Button>
+                <Button type="button" variant="outline" onClick={reset}>
+                  <RotateCcw className="h-4 w-4" />
+                  重置
+                </Button>
+              </div>
+            </Field>
           </form>
         </CardContent>
       </Card>

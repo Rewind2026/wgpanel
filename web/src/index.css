@@ -328,7 +328,13 @@
     @apply w-full border-collapse text-sm;
   }
 
-  .hud-table thead th {
+  /*
+   * 表头默认左对齐，但数值列要右对齐（th 上的 text-right 工具类）。
+   * 用 :where() 把 th 的特异性降为 0，让工具类能覆盖组件默认对齐；
+   * 否则 .hud-table thead th（0,1,2）优先级高于 .text-right（0,1,0），
+   * 数值列表头会停在左边，和右对齐的数据格错开。
+   */
+  .hud-table :where(thead th) {
     @apply border-b border-border bg-muted/60 px-3 py-2 text-left font-display text-[10px] font-semibold uppercase text-muted-foreground;
     letter-spacing: 0.14em;
     white-space: nowrap;
